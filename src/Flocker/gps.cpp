@@ -140,6 +140,7 @@ void NMEAGPS::update()
       {
         lastMsgOffset = millis();
         this->parseSentence();
+        leds.pulseGrn(10);
       } // final newline
     } // parsing == true
   }  // char available

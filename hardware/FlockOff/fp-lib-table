@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "flock")(type "KiCad")(uri "${KIPRJMOD}/lib/project/flock.pretty")(options "")(descr ""))
+)
