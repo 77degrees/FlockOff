@@ -6,12 +6,13 @@
 *  + Partition: 8MB with spiffs
 *  + PSRAM: OPI PSRAM
 ***********************************************************************/
-
+#include <esp_psram.h>
 
 #include "gps.h"
 #include "led.h"
 #include "cli.h"
 #include "mbfs.h"
+#include "cfg.h"
 
 #define GPS_PORT_TX 6
 #define GPS_PORT_RX 5
@@ -23,11 +24,22 @@
 #define CLED_G 9
 #define CLED_B 8
 
+// globals
 NMEAGPS gps;
+MBFS flockfs;
+CONFIG flockCfg;
 static LEDS commLeds;
-static bool cliEnabled = false;
+
+/*
+void heapCheck() {
+  if (!heap_caps_check_integrity_all(true)) {
+    Serial.printf("HEAPCHK->HEAPS FUCKED!\r\n");
+  }
+}
+*/
 
 void setup() {
+  psramInit();
   pinMode(USER_LED, OUTPUT);
   Serial.begin(112500); // init USB serial
 
@@ -37,42 +49,20 @@ void setup() {
 
   commLeds.begin(CLED_R, CLED_G, CLED_B);
 
-  if (!initFS()) {
-    Serial.printf("No filesystem!!\r\n");
-  } else {
-    Serial.printf("Filesystem open.\r\n");
-  }
-
-  uint32_t now = millis();
-  Serial.printf("Press spacebar for interactive mode\r\n");
-  while ((millis() - now) < 5000) {
-    if (Serial.available()) {
-      if (Serial.read() == ' ') {
-        if (setupCLI()) {
-          cliEnabled = true;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!cliEnabled) {
-    Serial.printf("Non-interactive mode\r\n");
-  }
+  flockfs.begin();
+  flockCfg.begin();
+  setupCLI();
 }
 
 void loop() {
-  static uint32_t msnow = millis();
+  static uint32_t msFlash = millis();
 
   gps.update();
   commLeds.update();
+  updateCLI();
 
-  if (cliEnabled) {
-    updateCLI();
-  }
-
-  if ((millis() - msnow) > 500) {
-    msnow = millis();
+  if ((millis() - msFlash) > 500) {
+    msFlash = millis();
     digitalWrite(USER_LED, !digitalRead(USER_LED));
   }
 }

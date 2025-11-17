@@ -4,13 +4,28 @@
 #include <Arduino.h>
 #include "SPIFFS.h"
 
-bool initFS();
+class MBFS
+{
+public:
+  MBFS() {}
+  ~MBFS() {}
 
-void listDir(const char* dir, uint8_t levels);
-void readFile(const char * path);
-void writeFile(const char * path, const char * message);
-void appendFile(const char * path, const char * message);
-void renameFile(const char * path1, const char * path2);
-void deleteFile(const char * path);
+  bool begin();
+
+  void getInfo(size_t* cap, size_t* used);
+
+  const char* list();
+  size_t readFile(const char* path, uint8_t* buff, size_t len);
+  size_t writeFile(const char* path, const uint8_t* buff, size_t len);
+  size_t appendFile(const char* path, const uint8_t* buff, size_t len);
+  size_t getFileSize(const char* path);
+  bool renameFile(const char* src, const char* dst);
+  bool copyFile(const char* src, const char* dst);
+  bool deleteFile(const char* path);
+  bool fileExists(const char* path);
+
+private:
+};
+
 
 #endif // MBFS_H_

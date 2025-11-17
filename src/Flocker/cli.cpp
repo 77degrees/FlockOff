@@ -5,8 +5,11 @@
 #include "cli.h"
 #include "gps.h"
 #include "mbfs.h"
+#include "cfg.h"
 
 extern NMEAGPS gps;
+extern MBFS flockfs;
+extern CONFIG flockCfg;
 
 #define EMBEDDED_CLI_IMPL
 #include "embedded_cli.h"
@@ -15,50 +18,28 @@ extern NMEAGPS gps;
 static EmbeddedCli *cli = NULL;
 static CLI_UINT* cliBuffer = NULL; //[BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE)];
 
+
 bool setupCLI()
 {
   EmbeddedCliConfig *config = embeddedCliDefaultConfig();
-  bool usePSRAM = false;
 
-  if (esp_psram_init() == ESP_OK)
-  {
-    Serial.printf("Found PSRAM, will use for CLI....\r\n");
-    usePSRAM = true;
+    //cliBuffer = (CLI_UINT*)ps_malloc(BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE_PS));
+    //cliBuffer = (CLI_UINT*)malloc(BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE));
+    //if (!cliBuffer)
+    //{
+    //  Serial.printf("Failed to ps_malloc cliBuffer!\r\n");
+    //  return (false);
+    //}
 
-    cliBuffer = (CLI_UINT*)ps_malloc(BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE_PS));
-    if (!cliBuffer)
-    {
-      Serial.printf("Failed to ps_malloc cliBuffer!\r\n");
-      return (false);
-    }
+  config->cliBuffer = cliBuffer;
 
-    config->cliBuffer = cliBuffer;
-    config->cliBufferSize = CLI_BUFFER_SIZE_PS;
-    config->rxBufferSize = CLI_RX_BUFFER_SIZE_PS;
-    config->cmdBufferSize = CLI_CMD_BUFFER_SIZE_PS;
-    config->historyBufferSize = CLI_HISTORY_SIZE_PS;
-    config->maxBindingCount = CLI_BINDING_COUNT_PS;    
-  }
-  else
-  {
-
-    Serial.printf("No PSRAM found, will use internal SRAM for CLI....\r\n");
-    cliBuffer = (CLI_UINT*)malloc(BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE_PS));
-    if (!cliBuffer)
-    {
-      Serial.printf("Failed to malloc cliBuffer!\r\n");
-      return (false);
-    }
-
-    config->cliBuffer = cliBuffer;
-    config->cliBufferSize = CLI_BUFFER_SIZE;
-    config->rxBufferSize = CLI_RX_BUFFER_SIZE;
-    config->cmdBufferSize = CLI_CMD_BUFFER_SIZE;
-    config->historyBufferSize = CLI_HISTORY_SIZE;
-    config->maxBindingCount = CLI_BINDING_COUNT; 
-  }
-
-  cli = embeddedCliNew(config, usePSRAM);
+  config->cliBufferSize = CLI_BUFFER_SIZE_PS;
+  config->rxBufferSize = CLI_RX_BUFFER_SIZE_PS;
+  config->cmdBufferSize = CLI_CMD_BUFFER_SIZE_PS;
+  config->historyBufferSize = CLI_HISTORY_SIZE_PS;
+  config->maxBindingCount = CLI_BINDING_COUNT_PS;
+  config->invitation = "Flock Off $> ";
+  cli = embeddedCliNew(config, true);
 
   if (cli == NULL)
   {
@@ -76,16 +57,16 @@ bool setupCLI()
   cli->writeChar = writeChar;
 
   Serial.printf("\r\n");
-  Serial.printf("   /$$$$$$$$ /$$                     /$$              /$$$$$$   /$$$$$$   /$$$$$$\r\n");
-  Serial.printf("  | $$_____/| $$                    | $$             /$$__  $$ /$$__  $$ /$$__  $$\r\n");
-  Serial.printf("  | $$      | $$  /$$$$$$   /$$$$$$$| $$   /$$      | $$  \\ $$| $$  \\__/| $$  \\__/\r\n");
-  Serial.printf("  | $$$$$   | $$ /$$__  $$ /$$_____/| $$  /$$/      | $$  | $$| $$$$    | $$$$    \r\n");
-  Serial.printf("  | $$__/   | $$| $$  \\ $$| $$      | $$$$$$/       | $$  | $$| $$_/    | $$_/    \r\n");
-  Serial.printf("  | $$      | $$| $$  | $$| $$      | $$_  $$       | $$  | $$| $$      | $$      \r\n");
-  Serial.printf("  | $$      | $$|  $$$$$$/|  $$$$$$$| $$ \\  $$      |  $$$$$$/| $$      | $$      \r\n");
-  Serial.printf("  |__/      |__/ \\______/  \\_______/|__/  \\__/       \\______/ |__/      |__/      \r\n");
+  Serial.printf(CLI_BOLD_RED "   /$$$$$$$$ /$$                     /$$              /$$$$$$   /$$$$$$   /$$$$$$\r\n");
+  Serial.printf(CLI_BOLD_GRN "  | $$_____/| $$                    | $$             /$$__  $$ /$$__  $$ /$$__  $$\r\n");
+  Serial.printf(CLI_BOLD_YEL "  | $$      | $$  /$$$$$$   /$$$$$$$| $$   /$$      | $$  \\ $$| $$  \\__/| $$  \\__/\r\n");
+  Serial.printf(CLI_BOLD_BLU "  | $$$$$   | $$ /$$__  $$ /$$_____/| $$  /$$/      | $$  | $$| $$$$    | $$$$    \r\n");
+  Serial.printf(CLI_BOLD_PUR "  | $$__/   | $$| $$  \\ $$| $$      | $$$$$$/       | $$  | $$| $$_/    | $$_/    \r\n");
+  Serial.printf(CLI_BOLD_CYA "  | $$      | $$| $$  | $$| $$      | $$_  $$       | $$  | $$| $$      | $$      \r\n");
+  Serial.printf(CLI_BOLD_RED "  | $$      | $$|  $$$$$$/|  $$$$$$$| $$ \\  $$      |  $$$$$$/| $$      | $$      \r\n");
+  Serial.printf(CLI_BOLD_GRN "  |__/      |__/ \\______/  \\_______/|__/  \\__/       \\______/ |__/      |__/      \r\n");
 
-  Serial.printf("(c) 2025 M.Brugman\r\n\r\n\r\n");         
+  Serial.printf(CLI_RESET CLI_BOLD "(c) 2025 M.Brugman\r\n\r\n\r\n" CLI_RESET);         
   Serial.printf("CLI Enabled.  'Help' for help\r\n");                                                                       
 
   return (true);
