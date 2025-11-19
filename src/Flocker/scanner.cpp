@@ -25,89 +25,6 @@ typedef struct
   int8_t rssi;
 } found_beacon_t;
 
-static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-                                   36, 40, 44, 48, 149, 153, 157, 161, 165};
-
-const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
-static uint16_t channelInx = 0;     
-static bool once = false;
-static bool scanning = false;
-static md5_context ctx;
-static uint8_t md5sum[16];
-static std::map<uint32_t, found_beacon_t> beacons;
-
-const char* HexDump(const void* data, size_t size) 
-{
-  static char ret[2048] = {0};
-  char line[120];
-  char adder[8];
-  char prnt[40];
-  const char* d = (const char*)data;
-
-  size_t lineLen = 119;
-  size_t prntLen = 39;
-
-  const uint8_t* thisChar = (uint8_t*)data;
-  size_t posn = 0;
-
-  for (size_t ii = 0; ii < size; ++ii)
-  {
-    if (!posn)
-    {
-      snprintf(line, lineLen, "%08x  ", ii);
-      snprintf(prnt, prntLen, " |");
-    }
-
-    snprintf(adder, 7, "%02x ", (int)*d);
-    strncat(line, adder, (lineLen - strlen(line)));
-
-    if (isprint(*d))  snprintf(adder, 7, "%c", *d);
-    else              snprintf(adder, 7, ".");
-    strncat(prnt, adder, (prntLen - strlen(prnt)));
-    
-    ++posn;
-    ++d;
-
-    if (posn == 8)
-    {
-      strncat(line, " ", (lineLen - strlen(line)));
-      strncat(prnt, " ", (prntLen - strlen(prnt)));
-    }
-
-    if (posn == 16)
-    {
-      posn = 0;
-      strncat(prnt, "|", (prntLen - strlen(prnt)));
-      strncat(line, prnt, (lineLen - strlen(line)));
-      strncat(ret, line, (2047 - strlen(ret)));
-      strncat(ret, "\r\n", (2047 - strlen(ret)));
-    }
-  }
-
-  if (posn)
-  {
-    strncat(line, " ", (lineLen - strlen(line)));
-    size_t spacer = 16 - posn;
-    for (size_t ii = 0; ii < spacer; ++ii)
-    {
-      strncat(line, "   ", (lineLen - strlen(line)));
-      strncat(prnt, " ", (prntLen - strlen(prnt)));
-    }
-    if (spacer < 8)
-    {
-      strncat(line, " ", (lineLen - strlen(line)));
-    }
-
-    strncat(prnt, "|", (prntLen - strlen(prnt)));
-    strncat(line, prnt, (lineLen - strlen(line)));
-    strncat(ret, line, (2047 - strlen(ret)));
-    strncat(ret, "\r\n", (2047 - strlen(ret)));
-  }
-
-  return (ret);
-}
-
-
 typedef struct __attribute__((packed))
 {
   uint8_t element_id;   // element ID
@@ -140,59 +57,96 @@ typedef struct
   uint8_t payload[0]; /* network data ended with 4 bytes csum (CRC32) */
 } wifi_ieee80211_packet_t;
 
+// 2G WiFi channels
+static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                                   36, 40, 44, 48, 149, 153, 157, 161, 165};
+
+const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
+static uint16_t channelInx = 0;   
+static bool scanning = false;
+static md5_context ctx;
+static uint8_t md5sum[16];
+static std::map<uint32_t, found_beacon_t> beacons;
+
+/*************************************************
+* Promiscuous mode packet callback handler
+*
+**************************************************
+* If an 802.11 packet of the WIFI_MANAGEMENT is is
+* seen, and if that packet is of subtype BEACON,
+* then add it to a std::map of results.  
+*
+* Note, before adding, check to see if that one
+* is already in the map to prevent dups
+*
+* Frankly, it blows my mind that a tiny six buck
+* microcontroller has the resources to handle 
+* STL containers (with iterators, no less!).
+*************************************************/
 void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
 {
   // we only want management packets
   if (type == WIFI_PKT_MGMT)// && scanning)
   {
+    // make some sense of the buffer
     const wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buff;
     const wifi_ieee80211_mac_hdr_t *hdr = (wifi_ieee80211_mac_hdr_t *)ppkt->payload;
     
+    // IEEE 802.11 Wifi header we begin with frame type and subtype
     uint8_t fc0   = hdr->frame_ctrl & 0xFF;
     uint8_t stype = (fc0 >> 4) & 0x0F;
     uint8_t ftype = (fc0 >> 2) & 0x03;
 
+    // at this point, we are only looking for management frames that are BEACONS
     if (stype == 8)
     {
+      // make sense out of the payload
       const wifi_ieee80211_beacon_t* beacon = (wifi_ieee80211_beacon_t*)hdr->frame;
       const wifi_ieee80211_beacon_element_t* element = &beacon->element;
+      
+      // a place to store the results
       found_beacon_t bcn;
       memset(bcn.ssid, 0, 33);
 
       // this is a beacon, so the first element should be SSID - this is a sanity check
       if (element->element_id == 0)
       {
+        // element length is the length of the SSID char array.  NOT ZERO TERMED, max 32 chars
         if (element->length)
         {
           memcpy(bcn.ssid, element->data, element->length);
         }
         else
         {
+          // does someone feel smart?  :/
           strncpy(bcn.ssid, "<HIDDEN>", 32);
         }
 
-        bcn.channel = channels[channelInx];
-        bcn.rssi = ppkt->rx_ctrl.rssi;
-        memcpy(bcn.mac, hdr->addr2, 6);
+        // populate the rest of the the results
+        bcn.channel = channels[channelInx]; // wifi channel
+        bcn.rssi = ppkt->rx_ctrl.rssi;      // signal strength
+        memcpy(bcn.mac, hdr->addr2, 6);     // MAC of the WiFi AP that sent the beacon
 
         // generate a key for the std::map - this will be the md5 hash of the found beacon struct
         md5_init(&ctx);
-        md5_digest(&ctx, &bcn, sizeof(bcn) - 1);  // do not include RSSI in key 
-        md5_output(&ctx, md5sum);
+        md5_digest(&ctx, &bcn, sizeof(bcn) - 1);  // do not include RSSI in key; we'll get multiple reads for the 
+        md5_output(&ctx, md5sum);                 // beacon, and end up with dups in the map due to varying signal
 
+        // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
         uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
         
         // have we seen this one already?
         std::map<uint32_t, found_beacon_t>::iterator it = beacons.find(key);
         if (it == beacons.end())
         {
+          // no?  then add it
           beacons[key] = bcn;
         }
       }
     }
-    return;
   }
 }
+
 
 void SCANNER::begin()
 {
@@ -210,9 +164,14 @@ void SCANNER::begin()
   esp_wifi_set_promiscuous(false);   
 }
 
-void SCANNER::survey()
+/*****************************************************
+* Do a single pass through all WiFi channels to see
+* what we can find out there.
+*****************************************************/
+void SCANNER::survey(uint32_t timing)
 {
   uint32_t msnow = millis();
+  beacons.clear();
 
   Serial.printf(CLI_CYA "Survey starting\r\n" CLI_RESET);
   channelInx = 0;
@@ -222,11 +181,9 @@ void SCANNER::survey()
   Serial.printf(CLI_YEL "Setting channel %d" CLI_RESET, channels[channelInx]);
   esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);    
 
-  once = false;
-
   while (scanning)
   {
-    if ((millis() - msnow) > 500)
+    if ((millis() - msnow) > timing)
     {
       msnow = millis();
       ++channelInx;

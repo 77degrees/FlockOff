@@ -25,7 +25,7 @@ void onCat(EmbeddedCli* cli, char* args, void* context);
 void onStatus(EmbeddedCli* cli, char* args, void* context);
 void onTimeZone(EmbeddedCli* cli, char* args, void* context);
 
-const struct CliCommandBinding bindings[] = {{"survey", "Perform Wifi survey", "Perform Wifi Survey", false, nullptr, onSurvey},
+const struct CliCommandBinding bindings[] = {{"survey", "Perform Wifi survey", "survey [interval] - channel hop interval in milliseconds", true, nullptr, onSurvey},
                                              {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
                                              {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
                                              {"fsinfo", "Get filesystem information", "Get total and free space in filesystem", false, nullptr, onFSinfo},
@@ -53,8 +53,14 @@ void writeChar(EmbeddedCli *embeddedCli, char c)
 
 
 void onSurvey(EmbeddedCli* cli, char* args, void* context)
-{
-  flockScan.survey();
+{ 
+  uint32_t timing = 1000; 
+  if (embeddedCliGetTokenCount(args) == 1)
+  {
+    timing = atoi(embeddedCliGetToken(args, 1));
+  }
+
+  flockScan.survey(timing);
 }
 
 void onClear(EmbeddedCli *cli, char *args, void *context)

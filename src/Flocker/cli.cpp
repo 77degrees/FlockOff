@@ -26,14 +26,6 @@ bool setupCLI()
 {
   EmbeddedCliConfig *config = embeddedCliDefaultConfig();
 
-    //cliBuffer = (CLI_UINT*)ps_malloc(BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE_PS));
-    //cliBuffer = (CLI_UINT*)malloc(BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE));
-    //if (!cliBuffer)
-    //{
-    //  Serial.printf("Failed to ps_malloc cliBuffer!\r\n");
-    //  return (false);
-    //}
-
   config->cliBuffer = cliBuffer;
 
   config->cliBufferSize = CLI_BUFFER_SIZE_PS;
@@ -69,8 +61,8 @@ bool setupCLI()
   Serial.printf(CLI_BOLD_RED "  | $$      | $$|  $$$$$$/|  $$$$$$$| $$ \\  $$      |  $$$$$$/| $$      | $$      \r\n");
   Serial.printf(CLI_BOLD_GRN "  |__/      |__/ \\______/  \\_______/|__/  \\__/       \\______/ |__/      |__/      \r\n");
 
-  Serial.printf(CLI_RESET CLI_BOLD "(c) 2025 M.Brugman\r\n\r\n\r\n" CLI_RESET);         
-  Serial.printf("CLI Enabled.  'Help' for help\r\n");                                                                       
+  Serial.printf(CLI_RESET CLI_BOLD "(c) 2025 M.Brugman\r\n\r\n" CLI_RESET);         
+  Serial.printf("CLI Enabled.  'help' for help; <command -h> for help on that command\r\n");                                                                       
 
   return (true);
 }
