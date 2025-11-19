@@ -1,15 +1,18 @@
 #include <Arduino.h>
 #include <esp_psram.h>
 #include "esp_task_wdt.h"
+#include <ctime>
 
 #include "cli.h"
 #include "gps.h"
 #include "mbfs.h"
 #include "cfg.h"
+#include "scanner.h"
 
 extern NMEAGPS gps;
 extern MBFS flockfs;
 extern CONFIG flockCfg;
+extern SCANNER flockScan;
 
 #define EMBEDDED_CLI_IMPL
 #include "embedded_cli.h"
@@ -17,7 +20,7 @@ extern CONFIG flockCfg;
 
 static EmbeddedCli *cli = NULL;
 static CLI_UINT* cliBuffer = NULL; //[BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE)];
-
+static bool cliIsHeld = false;
 
 bool setupCLI()
 {
@@ -74,13 +77,19 @@ bool setupCLI()
 
 void updateCLI()
 {
-  while (Serial.available())
+  if (!cliIsHeld)
   {
-     embeddedCliReceiveChar(cli, Serial.read());
-  }
+    while (Serial.available())
+    {
+      embeddedCliReceiveChar(cli, Serial.read());
+    }
 
-  embeddedCliProcess(cli);
+    embeddedCliProcess(cli);
+  }
 }
 
-
+void holdCLI(bool hold)
+{
+  cliIsHeld = hold;
+}
 

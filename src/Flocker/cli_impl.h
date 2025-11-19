@@ -7,33 +7,12 @@
 #define CLI_HISTORY_SIZE_PS 64
 #define CLI_BINDING_COUNT_PS 20
 
-#define CLI_RESET "\x1b[0m"
-
-#define CLI_BLK "\x1b[30m"
-#define CLI_RED "\x1b[31m"
-#define CLI_GRN "\x1b[32m"
-#define CLI_YEL "\x1b[33m" 
-#define CLI_BLU "\x1b[34m"
-#define CLI_PUR "\x1b[35m"
-#define CLI_CYA "\x1b[36m"
-#define CLI_WHT "\x1b[37m"
-
-#define CLI_BOLD "\x1b[1m"
-#define CLI_BOLD_BLK "\x1b[1;30m"
-#define CLI_BOLD_RED "\x1b[1;31m"
-#define CLI_BOLD_GRN "\x1b[1;32m"
-#define CLI_BOLD_YEL "\x1b[1;33m" 
-#define CLI_BOLD_BLU "\x1b[1;34m"
-#define CLI_BOLD_PUR "\x1b[1;35m"
-#define CLI_BOLD_CYA "\x1b[1;36m"
-#define CLI_BOLD_WHT "\x1b[1;37m"
-
 #define CLI_ERROR(x)  CLI_BOLD_RED x CLI_RESET
 
 void onCommand(EmbeddedCli *embeddedCli, CliCommand *command);
 void writeChar(EmbeddedCli *embeddedCli, char c);
 
-void onGPS(EmbeddedCli* cli, char* args, void* context);
+void onSurvey(EmbeddedCli* cli, char* args, void* context);
 void onClear(EmbeddedCli* cli, char* args, void* context);
 void onReset(EmbeddedCli* cli, char* args, void* context);
 void onFSinfo(EmbeddedCli* cli, char* args, void* context);
@@ -44,10 +23,9 @@ void onMv(EmbeddedCli* cli, char* args, void* context);
 void onCp(EmbeddedCli* cli, char* args, void* context);
 void onCat(EmbeddedCli* cli, char* args, void* context);
 void onStatus(EmbeddedCli* cli, char* args, void* context);
-void onSetupCfg(EmbeddedCli* cli, char* args, void* context);
-void onPrintCfg(EmbeddedCli* cli, char* args, void* context);
+void onTimeZone(EmbeddedCli* cli, char* args, void* context);
 
-const struct CliCommandBinding bindings[] = {{"gps", "Perform GPS functions", "-t for time, -p for position, -q for quality", true, nullptr, onGPS},
+const struct CliCommandBinding bindings[] = {{"survey", "Perform Wifi survey", "Perform Wifi Survey", false, nullptr, onSurvey},
                                              {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
                                              {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
                                              {"fsinfo", "Get filesystem information", "Get total and free space in filesystem", false, nullptr, onFSinfo},
@@ -58,24 +36,9 @@ const struct CliCommandBinding bindings[] = {{"gps", "Perform GPS functions", "-
                                              {"cp", "Copy file", "<source filename> <destination filename>", true, nullptr, onCp},
                                              {"cat", "Cat file", "<filename> file to read", true, nullptr,  onCat},
                                              {"status", "Get system status", "Get system status", false, nullptr, onStatus},
-                                             {"cfgInit", "init config", "init config", false, nullptr, onSetupCfg},
-                                             {"cfgPrint", "print config", "print config", false, nullptr, onPrintCfg}};
+                                             {"timezone", "Set time zone", "Set time zone, updates config structs", false, nullptr, onTimeZone}};
 
 const size_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
-
-
-
-void onSetupCfg(EmbeddedCli* cli, char* args, void* context)
-{
-  flockCfg.buildDefualtConfig();
-}
-
-void onPrintCfg(EmbeddedCli* cli, char* args, void* context)
-{
-  flockCfg.outputJson();
-}
-
-
 
 void onCommand(EmbeddedCli *embeddedCli, CliCommand *command)
 {
@@ -88,59 +51,15 @@ void writeChar(EmbeddedCli *embeddedCli, char c)
   Serial.write(c);
 }
 
-void onGPS(EmbeddedCli *cli, char *args, void *context)
+
+void onSurvey(EmbeddedCli* cli, char* args, void* context)
 {
-  bool err = false;
-  bool goodFix = false;
-  if (gps.getFixQuality() > 0)  goodFix = true;
-
-  uint16_t argc = embeddedCliGetTokenCount(args);
-  for (uint16_t ii = 1; ii <= argc; ++ii)
-  {
-    const char* a = embeddedCliGetToken(args, ii);
-
-    if (a[0] == '-' && strlen(a) > 1)
-    {
-      switch(a[1])
-      {
-        case 'q': 
-        {
-          Serial.printf(CLI_YEL "GPS fix quality is " CLI_BOLD_GRN "%s" CLI_RESET "\r\n", goodFix ? "good" : "bad");
-        }  break;
-
-        case 'p':
-        {
-          Serial.printf(CLI_YEL "GPS current coordinates are " CLI_BOLD_GRN "%02.5f, %03.5f\r\n" CLI_RESET, 
-              gps.getLatitude(), gps.getLongitude());
-        }  break;
-
-        case 't':
-        {
-          struct tm tm_;
-          gps.getTime(&tm_);
-
-          Serial.printf(CLI_YEL "GPS current time/date (gmt) is " CLI_BOLD_GRN "%02d:%02d:%02d %d/%d/%d\r\n" CLI_RESET, 
-              tm_.tm_hour, tm_.tm_min, tm_.tm_sec,
-              tm_.tm_mon, tm_.tm_mday, tm_.tm_year + 1900);         
-        }  break;
-
-        default: err = true;  
-      }
-    }
-  
-    if (err)
-    {
-      Serial.printf("gps command parameters:\r\n\t'q' - get GPS fix quality"
-                    "\r\n\t'p' - get GPS coordinates\r\n\t't' - get GPS time\r\n");
-
-      return;
-    }
-  }
+  flockScan.survey();
 }
 
 void onClear(EmbeddedCli *cli, char *args, void *context)
 {
-    Serial.printf("\33[2J");
+    Serial.printf(CLI_CLEAR);
 }
 
 void onFSinfo(EmbeddedCli *cli, char *args, void *context)
@@ -319,6 +238,22 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
   Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_YEL " bytes, " CLI_BOLD_GRN "%d"
                 CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_YEL " KiB free)\r\n" CLI_RESET,
                 ESP.getPsramSize(), (ESP.getPsramSize() - ESP.getFreePsram()), ESP.getPsramSize() / 1024);
+
+  Serial.printf(CLI_CYA "->Wall clock:\r\n" CLI_RESET);
+  char tstring[64] = {0};
+
+  time_t t = time(NULL);
+  tm *tmp;
+  tmp = localtime(&t);
+
+  strftime(tstring, 63, "%a, %d %b %Y %T %z", tmp);
+  Serial.printf(CLI_YEL "\tCurrent wall clock time is " CLI_BOLD_GRN "%s\r\n" CLI_RESET, tstring);
+  Serial.printf(CLI_YEL "\tTimezone is set to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, flockCfg.getTimeZone());  
+}
+
+void onTimeZone(EmbeddedCli* cli, char* args, void* context)
+{
+  flockCfg.selectTimeZone();
 }
 
 #endif // CLI_IMPL_H_

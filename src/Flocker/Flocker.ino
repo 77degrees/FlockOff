@@ -13,6 +13,7 @@
 #include "cli.h"
 #include "mbfs.h"
 #include "cfg.h"
+#include "scanner.h"
 
 #define GPS_PORT_TX 6
 #define GPS_PORT_RX 5
@@ -28,6 +29,8 @@
 NMEAGPS gps;
 MBFS flockfs;
 CONFIG flockCfg;
+SCANNER flockScan;
+
 static LEDS commLeds;
 
 /*
@@ -42,6 +45,9 @@ void setup() {
   psramInit();
   pinMode(USER_LED, OUTPUT);
   Serial.begin(112500); // init USB serial
+  delay(500);
+
+  Serial.printf(CLI_CLEAR);
 
   if (!gps.begin(GPS_PORT_BAUD, GPS_PORT_RX, GPS_PORT_TX)) {
     Serial.printf("gps not init'd!\r\n");
@@ -51,6 +57,7 @@ void setup() {
 
   flockfs.begin();
   flockCfg.begin();
+  flockScan.begin();
   setupCLI();
 }
 

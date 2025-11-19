@@ -12,9 +12,15 @@ public:
   void begin();
   bool buildDefualtConfig();
   void outputJson();
+  void selectTimeZone();
+  void setTimeZone();
+  const char* getTimeZone();
+  //const char** getWiFiAPs();
 
 private:
+  bool writeConfig();
   JsonDocument cfg;
+
 };
 
 #endif //CFG_H_

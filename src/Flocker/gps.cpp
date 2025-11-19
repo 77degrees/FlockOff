@@ -1,5 +1,8 @@
 #include "Arduino.h"
 #include "gps.h"
+#include "cfg.h"
+
+extern CONFIG flockCfg;
 
 bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
 {
@@ -32,6 +35,8 @@ void NMEAGPS::parseSentence()
   {
     case MINMEA_SENTENCE_RMC:
     {
+      static bool timeIsSet = false;
+
       struct minmea_sentence_rmc frame;
       if (minmea_parse_rmc(&frame, sentence)) 
       {
@@ -42,6 +47,20 @@ void NMEAGPS::parseSentence()
 
         minmea_getdatetime(&this->localtm, &frame.date, &frame.time);
         once = true;
+
+        if (!timeIsSet)
+        {
+          setenv("TZ", "GMT0", 1);
+          tzset();
+
+          timeval setTime;
+          setTime.tv_sec = mktime(&this->localtm);
+          setTime.tv_usec = 0;
+          settimeofday(&setTime, NULL);
+
+          flockCfg.setTimeZone();
+          timeIsSet = true;
+        }
       }
       else
       {
