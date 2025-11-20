@@ -1,6 +1,8 @@
 #include <map>
 
 #include <WiFi.h>
+#include <MD5Builder.h>
+
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 #include "nvs_flash.h"
@@ -10,12 +12,10 @@
 #include "cfg.h"
 #include "gps.h"
 #include "mbfs.h"
-#include "md5.h"
 
 extern CONFIG flockCfg;
 extern MBFS flockfs;
 extern CONFIG flockCfg;
-
 
 typedef struct
 {
@@ -64,7 +64,7 @@ static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
 const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
 static uint16_t channelInx = 0;   
 static bool scanning = false;
-static md5_context ctx;
+static MD5Builder hasher;
 static uint8_t md5sum[16];
 static std::map<uint32_t, found_beacon_t> beacons;
 
@@ -128,9 +128,10 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
         memcpy(bcn.mac, hdr->addr2, 6);     // MAC of the WiFi AP that sent the beacon
 
         // generate a key for the std::map - this will be the md5 hash of the found beacon struct
-        md5_init(&ctx);
-        md5_digest(&ctx, &bcn, sizeof(bcn) - 1);  // do not include RSSI in key; we'll get multiple reads for the 
-        md5_output(&ctx, md5sum);                 // beacon, and end up with dups in the map due to varying signal
+        hasher.begin();
+        hasher.add((uint8_t*)&bcn, sizeof(bcn) - 1);  // do not include RSSI in key; we'll get multiple reads for the 
+        hasher.calculate();                           // beacon, and end up with dups in the map due to varying signal
+        hasher.getBytes(md5sum);
 
         // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
         uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
