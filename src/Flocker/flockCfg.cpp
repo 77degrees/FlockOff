@@ -1,6 +1,4 @@
 #include "flockCfg.h"
-#include "cli.h"
-#include "flockFs.h"
 
 #include "globals.h"
 

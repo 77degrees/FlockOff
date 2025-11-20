@@ -1,6 +1,5 @@
 #include "Arduino.h"
 #include "gps.h"
-#include "flockCfg.h"
 
 #include "globals.h"
 

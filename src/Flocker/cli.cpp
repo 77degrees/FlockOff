@@ -4,10 +4,6 @@
 #include <ctime>
 
 #include "cli.h"
-#include "gps.h"
-#include "flockFs.h"
-#include "flockCfg.h"
-#include "scanner.h"
 
 #include "globals.h"
 
@@ -48,7 +44,7 @@ bool setupCLI()
   cli->onCommand = onCommand;
   cli->writeChar = writeChar;
 
-  Serial.printf("\r\n");
+  Serial.printf(CLI_CLEAR);
   Serial.printf(CLI_BOLD_RED "   /$$$$$$$$ /$$                     /$$              /$$$$$$   /$$$$$$   /$$$$$$\r\n");
   Serial.printf(CLI_BOLD_GRN "  | $$_____/| $$                    | $$             /$$__  $$ /$$__  $$ /$$__  $$\r\n");
   Serial.printf(CLI_BOLD_YEL "  | $$      | $$  /$$$$$$   /$$$$$$$| $$   /$$      | $$  \\ $$| $$  \\__/| $$  \\__/\r\n");

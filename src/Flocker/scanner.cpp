@@ -8,10 +8,6 @@
 #include "nvs_flash.h"
 
 #include "scanner.h"
-#include "cli.h"
-#include "flockCfg.h"
-#include "gps.h"
-#include "flockFs.h"
 
 #include "globals.h"
 
