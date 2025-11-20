@@ -11,8 +11,8 @@
 #include "gps.h"
 #include "led.h"
 #include "cli.h"
-#include "mbfs.h"
-#include "cfg.h"
+#include "flockFs.h"
+#include "flockCfg.h"
 #include "scanner.h"
 
 #define GPS_PORT_TX 6
@@ -46,8 +46,6 @@ void setup() {
   pinMode(USER_LED, OUTPUT);
   Serial.begin(112500); // init USB serial
   delay(500);
-
-  Serial.printf(CLI_CLEAR);
 
   if (!gps.begin(GPS_PORT_BAUD, GPS_PORT_RX, GPS_PORT_TX)) {
     Serial.printf("gps not init'd!\r\n");

@@ -9,13 +9,11 @@
 
 #include "scanner.h"
 #include "cli.h"
-#include "cfg.h"
+#include "flockCfg.h"
 #include "gps.h"
-#include "mbfs.h"
+#include "flockFs.h"
 
-extern CONFIG flockCfg;
-extern MBFS flockfs;
-extern CONFIG flockCfg;
+#include "globals.h"
 
 typedef struct
 {

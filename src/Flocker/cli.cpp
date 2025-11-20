@@ -5,14 +5,11 @@
 
 #include "cli.h"
 #include "gps.h"
-#include "mbfs.h"
-#include "cfg.h"
+#include "flockFs.h"
+#include "flockCfg.h"
 #include "scanner.h"
 
-extern NMEAGPS gps;
-extern MBFS flockfs;
-extern CONFIG flockCfg;
-extern SCANNER flockScan;
+#include "globals.h"
 
 #define EMBEDDED_CLI_IMPL
 #include "embedded_cli.h"

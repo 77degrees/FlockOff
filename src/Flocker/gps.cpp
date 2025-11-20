@@ -1,8 +1,8 @@
 #include "Arduino.h"
 #include "gps.h"
-#include "cfg.h"
+#include "flockCfg.h"
 
-extern CONFIG flockCfg;
+#include "globals.h"
 
 bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
 {
