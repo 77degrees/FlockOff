@@ -6,7 +6,7 @@
 *  + Partition: 8MB with spiffs
 *  + PSRAM: OPI PSRAM
 ***********************************************************************/
-#include <esp_psram.h>
+//#include <esp_psram.h>
 
 #include "gps.h"
 #include "led.h"
@@ -30,44 +30,58 @@ NMEAGPS gps;
 MBFS flockfs;
 CONFIG flockCfg;
 SCANNER flockScan;
+bool psRamInitOk;
+bool initOk;
 
 static LEDS commLeds;
 
-/*
 void heapCheck() {
   if (!heap_caps_check_integrity_all(true)) {
     Serial.printf("HEAPCHK->HEAPS FUCKED!\r\n");
   }
 }
-*/
 
 void setup() {
-  psramInit();
+  initOk = true;
+  psRamInitOk = psramInit();
   pinMode(USER_LED, OUTPUT);
-  Serial.begin(112500); // init USB serial
-  delay(500);
+  Serial.begin(112500);  // init USB serial
+  delay(2000);
 
-  if (!gps.begin(GPS_PORT_BAUD, GPS_PORT_RX, GPS_PORT_TX)) {
-    Serial.printf("gps not init'd!\r\n");
-  } 
+  initOk &= gps.begin(GPS_PORT_BAUD, GPS_PORT_RX, GPS_PORT_TX);
+  initOk &= flockfs.begin();
+  initOk &= flockCfg.begin();
+  initOk &= flockScan.begin();
+  initOk &= setupCLI();
 
   commLeds.begin(CLED_R, CLED_G, CLED_B);
 
-  flockfs.begin();
-  flockCfg.begin();
-  flockScan.begin();
-  setupCLI();
+  if (!initOk)
+  {
+    delay(2000);
+    Serial.printf("SOMETHNG DIDN'T INIT.  Fuck :/\r\n");
+    delay(2000);
+  }
 }
 
 void loop() {
   static uint32_t msFlash = millis();
+  static uint32_t msHeap = millis() - 1000;
 
-  gps.update();
-  commLeds.update();
-  updateCLI();
+  if (initOk)
+  {
+    gps.update();
+    commLeds.update();
+    updateCLI();
+  }
 
   if ((millis() - msFlash) > 500) {
     msFlash = millis();
     digitalWrite(USER_LED, !digitalRead(USER_LED));
+  }
+
+  if ((millis() - msHeap) > 2000) {
+    msHeap = millis();
+    heapCheck();
   }
 }

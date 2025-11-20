@@ -143,7 +143,7 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
 }
 
 
-void SCANNER::begin()
+bool SCANNER::begin()
 {
   channelInx = 0;
   scanning = false;
@@ -152,11 +152,11 @@ void SCANNER::begin()
   WiFi.disconnect();
   delay(200);
 
-  //esp_wifi_set_promiscuous(true);
+  esp_wifi_set_promiscuous(false);   
   esp_wifi_set_promiscuous_rx_cb(&wifi_pkt_hndlr);
   esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
   
-  esp_wifi_set_promiscuous(false);   
+  return (true);
 }
 
 /*****************************************************

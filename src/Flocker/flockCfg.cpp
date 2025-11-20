@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 #include "flockCfg.h"
 
 #include "globals.h"
@@ -63,21 +65,35 @@ const cfg_tz_t zones[] = {{0, "default CSD/CDT", "CST6CDT,M3.2.0,M11.1.0"},
 const size_t tzCount = sizeof(zones) / sizeof(cfg_tz_t);
 
 
-void CONFIG::begin()
+bool CONFIG::begin()
 {
-  size_t cfgSize = flockfs.getFileSize(CONFIG_FILENAME);
-  if (!cfgSize)
+  if (!flockfs.fileExists(CONFIG_FILENAME))
   {
-    this->buildDefualtConfig();
-    Serial.print(CLI_BOLD_RED "CONFIG-> Built default config data\r\n" CLI_RESET);
+    Serial.print(CLI_BOLD_RED "CONFIG::begin()-> Built default config data\r\n" CLI_RESET);
+    return (this->buildDefualtConfig());
   }
   else
   {
+    size_t cfgSize = flockfs.getFileSize(CONFIG_FILENAME);
+
     char* json = (char*)ps_malloc(cfgSize);
-    flockfs.readFile(CONFIG_FILENAME, (uint8_t*)json, cfgSize);
+    if (!json)
+    {
+      Serial.print(CLI_BOLD_RED "CONFIG::begin()-> Did not allocate to build default config data\r\n" CLI_RESET);
+      return (false);
+    }
+    
+    if (flockfs.readFile(CONFIG_FILENAME, (uint8_t*)json, cfgSize) == -1)
+    {
+      Serial.printf(CLI_BOLD_RED "CONFIG::begin()-> Error reading config file\r\n" CLI_RESET);
+      return (false);
+    }
+
     deserializeJson(cfg, json);
     delete (json);
   }
+
+  return(true);
 }
 
 bool CONFIG::buildDefualtConfig()
@@ -168,18 +184,30 @@ const char* CONFIG::getTimeZone()
 
 bool CONFIG::writeConfig()
 {
+  bool retVal = false;
   char* cfgjson = (char*)ps_malloc(2048);
+
   if (!cfgjson)
   {
-    return(false);
+    Serial.printf(CLI_BOLD_RED "CONFIG::writeConfig()->DID NOT ALLOCATE WRITE BUFFER" CLI_RESET);
+    return(retVal);
   }
+
   memset(cfgjson, 0, 2048);
   
   serializeJson(cfg, cfgjson, 2047);
   flockfs.deleteFile(CONFIG_FILENAME);
-  flockfs.writeFile(CONFIG_FILENAME, (uint8_t*)cfgjson, strlen(cfgjson));
+  
+  if (flockfs.writeFile(CONFIG_FILENAME, (uint8_t*)cfgjson, strlen(cfgjson)) == -1)
+  {
+    Serial.printf(CLI_BOLD_RED "CONFIG::writeConfig()-> Error writing config file\r\n" CLI_RESET);
+  }
+  else
+  {
+    retVal = true;
+  }
   
   free(cfgjson);
 
-  return (true);
+  return (retVal);
 }

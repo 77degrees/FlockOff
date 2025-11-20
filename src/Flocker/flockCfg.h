@@ -9,7 +9,7 @@ public:
   CONFIG() {}
   ~CONFIG() {}
 
-  void begin();
+  bool begin();
   bool buildDefualtConfig();
   void outputJson();
   void selectTimeZone();

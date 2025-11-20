@@ -51,7 +51,6 @@ void writeChar(EmbeddedCli *embeddedCli, char c)
   Serial.write(c);
 }
 
-
 void onSurvey(EmbeddedCli* cli, char* args, void* context)
 { 
   uint32_t timing = 1000; 
@@ -81,7 +80,17 @@ void onFSinfo(EmbeddedCli *cli, char *args, void *context)
 
 void onLs(EmbeddedCli *cli, char *args, void *context)
 {
-  Serial.printf(CLI_YEL "%s" CLI_RESET, flockfs.list());
+  std::vector<const char*>files;
+  size_t count = flockfs.list(files);
+
+  Serial.printf(CLI_CYA "Filesystem is holding %d files:\r\n" CLI_RESET, count);
+
+  for (std::vector<const char*>::iterator it = files.begin(); it != files.end(); ++it)
+  {
+    char f[128] = {0};
+    strncpy(f, *it, 127);
+    Serial.printf(CLI_GRN "  %s\r\n" CLI_RESET, *it);
+  }
 }
 
 void onWrite(EmbeddedCli *cli, char *args, void *context)
@@ -89,13 +98,20 @@ void onWrite(EmbeddedCli *cli, char *args, void *context)
   if (embeddedCliGetTokenCount(args) == 2)
   {
     const char* fname = embeddedCliGetToken(args, 1);
-    size_t len = flockfs.writeFile(fname, (uint8_t*)embeddedCliGetToken(args, 2), strlen(embeddedCliGetToken(args, 2)));
+    ssize_t len = flockfs.writeFile(fname, (uint8_t*)embeddedCliGetToken(args, 2), strlen(embeddedCliGetToken(args, 2)));
 
-    Serial.printf(CLI_YEL "Wrote " CLI_BOLD_GRN "%d" CLI_YEL " bytes to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, len, fname);
+    if (len == -1)
+    {
+      Serial.printf(CLI_BOLD_RED "Error writing to %s\r\n" CLI_RESET, fname);
+    }
+    else
+    {
+      Serial.printf(CLI_YEL "Wrote " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " bytes to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, len, fname);
+    }
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename or data. " CLI_YEL "Usage: write <filename> <string data to write>\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename or data. " CLI_RESET " " CLI_YEL "Usage: write <filename> <string data to write>\r\n" CLI_RESET);
   }
 }
 
@@ -162,13 +178,14 @@ void onCp(EmbeddedCli* cli, char* args, void* context)
     Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: cp <source file name> <destination file name>\r\n" CLI_RESET);
   }
 }
+
 void onCat(EmbeddedCli *cli, char *args, void *context)
 {
   if (embeddedCliGetTokenCount(args) == 1)
   {
     const char* fname = embeddedCliGetToken(args, 1);
 
-    size_t fileLen = flockfs.getFileSize(fname);
+    ssize_t fileLen = flockfs.getFileSize(fname);
     if (fileLen == -1)
     {
       Serial.printf("Unable to open %s\r\n", fname);
@@ -200,7 +217,7 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
 
 void onReset(EmbeddedCli *cli, char *args, void *context)
 {
-  SPIFFS.end();
+  LittleFS.end();
   delay(1000);
 
   esp_task_wdt_deinit();
@@ -238,11 +255,11 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
   onFSinfo(NULL, NULL, NULL);
 
   Serial.printf(CLI_CYA "->Memories:\r\n" CLI_RESET);
-  Serial.printf(CLI_YEL "\tInternal total heap " CLI_BOLD_GRN "%d" CLI_YEL " bytes, " CLI_BOLD_GRN "%d" 
-                CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_YEL " KiB free)\r\n" CLI_RESET,
+  Serial.printf(CLI_YEL "\tInternal total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " bytes, " CLI_BOLD_GRN "%d" 
+                CLI_RESET " " CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " KiB free)\r\n" CLI_RESET,
                 ESP.getHeapSize(), (ESP.getHeapSize() - ESP.getFreeHeap()), ESP.getFreeHeap() / 1024);
-  Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_YEL " bytes, " CLI_BOLD_GRN "%d"
-                CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_YEL " KiB free)\r\n" CLI_RESET,
+  Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " bytes, " CLI_BOLD_GRN "%d"
+                CLI_RESET " " CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " KiB free)\r\n" CLI_RESET,
                 ESP.getPsramSize(), (ESP.getPsramSize() - ESP.getFreePsram()), ESP.getPsramSize() / 1024);
 
   Serial.printf(CLI_CYA "->Wall clock:\r\n" CLI_RESET);

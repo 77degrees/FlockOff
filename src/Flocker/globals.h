@@ -15,6 +15,8 @@ extern NMEAGPS gps;
 extern MBFS flockfs;
 extern CONFIG flockCfg;
 extern SCANNER flockScan;
+extern bool psRamInitOk;
+extern bool initOk;
 
 /**********************************
 #defines for CLI/serial output
@@ -42,5 +44,7 @@ colors (macros for ANSII codes)
 #define CLI_BOLD_CYA "\x1b[1;36m"
 #define CLI_BOLD_WHT "\x1b[1;37m"
 
+
+#define FORMAT_LITTLEFS_IF_FAILED true
 
 #endif // GLOBALS_H_

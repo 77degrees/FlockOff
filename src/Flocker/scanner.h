@@ -7,7 +7,7 @@ public:
   SCANNER() {}
   ~SCANNER() {}
 
-  void begin();
+  bool begin();
   void survey(uint32_t timing);
 
 private:
