@@ -11,30 +11,77 @@
 
 #include "globals.h"
 
-typedef struct
+// We're only looking at management 802.11 frames.  There are 16
+// subtypes of management frames (asdefined here).  The packet
+// structure is different for each subtype, but in general:
+//   HEADER (fixed size)
+//   FIXED DATA (variable number of bytes, zero or more)
+//   TAGGED DATA (variable number of tagged parameters, zero or more)
+//   CRC32 (4 bytes)
+#define MGMT_FRAME_SUBTYPE_ASSOCIATION_REQUEST 0x00
+#define MGMT_FRAME_SUBTYPE_ASSOCIATION_RESPONSE 0x01
+#define MGMT_FRAME_SUBTYPE_REASSOCIATION_REQUEST 0x02
+#define MGMT_FRAME_SUBTYPE_REASSOCIATION_RESPONSE 0x03
+#define MGMT_FRAME_SUBTYPE_PROBE_REQUEST 0x04
+#define MGMT_FRAME_SUBTYPE_PROBE_RESPONSE 0x05
+#define MGMT_FRAME_SUBTYPE_TIMING_ADVERTISEMENT 0x06
+#define MGMT_FRAME_SUBTYPE_RESERVED_1 0x07
+#define MGMT_FRAME_SUBTYPE_BEACON 0x08
+#define MGMT_FRAME_SUBTYPE_ATIM 0x09
+#define MGMT_FRAME_SUBTYPE_DISASSOCIATION 0x0a
+#define MGMT_FRAME_SUBTYPE_AUTHENTICATION 0x0b
+#define MGMT_FRAME_SUBTYPE_DEAUTHENTICATION 0x0c
+#define MGMT_FRAME_SUBTYPE_ACTION 0x0d
+#define MGMT_FRAME_SUBTYPE_ACTION_NO_ACK 0x0e
+#define MGMT_FRAME_SUBTYPE_RESERVED2 0x0f
+
+// Each of the management frame subtypes (defined above) has zero or
+// more fixed bytes of parameter data before getting to the zero or
+// more tagged parameters.  This array holds the number of bytes
+// for each subtype
+uint8_t fixedParameterLength[] = {
+  4,  // 0x00 - length of fixed parameters in assoc request subtype
+  6,  // 0x01 - length of fixed parameters in assoc response subtype
+  10, // 0x02 - length of fixed parameters in reassoc request subtype
+  6,  // 0x03 - length of fixed parameters in reassoc response subtype
+  0,  // 0x04 - length of fixed parameters in probe request subtype
+  12, // 0x05 - length of fixed parameters in probe response subtype
+  0,  // 0x06 - timing advertisement
+  0,  // 0x07 - reserved subtype
+  12, // 0x08 - length of fixed parameters in beacon subtype
+  0,  // 0x09 - ATIM (announcement traffic indication message - something else entirely)
+  2,  // 0x0a - length of fixed parameters in dissociation subtype
+  6,  // 0x0b - length of fixed parameters in authentication subtype
+  2,  // 0x0c - length of fixed parameters in deauthentication subtype
+  17, // 0x0d - length of fixed parameters in action subtype
+  0,  // 0x0e - length of fixed parameters in action no-ack subtype
+  0   // 0x07 - reserved subtype
+};
+
+// structure to hold details about every device found; not just
+// Flock type things at this point
+struct __attribute__((packed)) found_flock_t
 {
+  FLOCK_DISCOVERY_METHOD method;
+  uint8_t subtype;
   uint8_t channel;
-  char ssid[33];
+  char ssid[SSID_LEN + 1];
   uint8_t mac[6];
   int8_t rssi;
-} found_beacon_t;
+};
 
-typedef struct __attribute__((packed))
+// variable length tagged parameter in a management packet.  A tagged parameter
+// is made up of the ID, length of the data, and the data itself.  For 
+// 802.11 packets, parameter 0 is the SSID, up to 32 bytes long
+struct __attribute__((packed)) wifi_ieee80211_mgmt_tagged_parameters_t
 {
-  uint8_t element_id;   // element ID
-  uint8_t length;       // length of element
-  uint8_t data[0];      // element data
-} wifi_ieee80211_beacon_element_t;
+  uint8_t parameter_id; // parameter ID
+  uint8_t length;       // length of parameter
+  uint8_t data[0];      // parameter data
+};
 
-typedef struct __attribute__((packed))
-{
-  uint8_t timestamp[8];     // microseconds of uptime
-  uint16_t interval;        // time units between beacons (TU - 1.024 microseconds)
-  uint16_t capabilityInfo;  // bitmap
-  wifi_ieee80211_beacon_element_t element;
-} wifi_ieee80211_beacon_t;
-
-typedef struct __attribute__((packed))
+// 802.11 header
+struct __attribute__((packed)) wifi_ieee80211_mac_hdr_t
 {
   uint16_t frame_ctrl;
   uint16_t duration_id;
@@ -42,16 +89,10 @@ typedef struct __attribute__((packed))
   uint8_t addr2[6]; // sender address
   uint8_t addr3[6]; // filtering address
   uint16_t sequence_ctrl;
-  uint8_t frame[0]; // data
-} wifi_ieee80211_mac_hdr_t;
+  uint8_t frame[0]; // frame data - start of fixed data (if any) and then tagged parameters (if any)
+};
 
-typedef struct
-{
-  wifi_ieee80211_mac_hdr_t hdr;
-  uint8_t payload[0]; /* network data ended with 4 bytes csum (CRC32) */
-} wifi_ieee80211_packet_t;
-
-// 2G WiFi channels
+// WiFi channels
 static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                                    36, 40, 44, 48, 149, 153, 157, 161, 165};
 
@@ -60,7 +101,8 @@ static uint16_t channelInx = 0;
 static bool scanning = false;
 static MD5Builder hasher;
 static uint8_t md5sum[16];
-static std::map<uint32_t, found_beacon_t> beacons;
+static std::map<uint32_t, found_flock_t> devices;
+static std::map<uint32_t, found_flock_t>::const_iterator cit;
 
 /*************************************************
 * Promiscuous mode packet callback handler
@@ -79,67 +121,80 @@ static std::map<uint32_t, found_beacon_t> beacons;
 *************************************************/
 void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
 {
-  // we only want management packets
-  if (type == WIFI_PKT_MGMT)// && scanning)
+  // make some sense of the buffer.  The passed buffer is of type promiscuous packet;
+  // we dont' care about most of that (other than the packet length), so just skip
+  // right to the payload, which is the start of the header
+  const wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buff;
+  const wifi_ieee80211_mac_hdr_t *hdr = (wifi_ieee80211_mac_hdr_t *)ppkt->payload;
+  
+  // get the length of the packet (minus header stuffs and CRC32);
+  size_t pktLen = ppkt->rx_ctrl.sig_len - sizeof(*hdr) - 4; // last 4 is the CRC32
+
+  // IEEE 802.11 Wifi header - get the subtype.  We know these are only management
+  // frames because we set the promiscuous mode filter for them
+  uint8_t stype = ((hdr->frame_ctrl & 0xFF) >> 4) & 0x0F;
+
+  // remaining packet length, reduced by count of fixed data bytes
+  if (pktLen > fixedParameterLength[stype])
   {
-    // make some sense of the buffer
-    const wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buff;
-    const wifi_ieee80211_mac_hdr_t *hdr = (wifi_ieee80211_mac_hdr_t *)ppkt->payload;
-    
-    // IEEE 802.11 Wifi header we begin with frame type and subtype
-    uint8_t fc0   = hdr->frame_ctrl & 0xFF;
-    uint8_t stype = (fc0 >> 4) & 0x0F;
-    uint8_t ftype = (fc0 >> 2) & 0x03;
-
-    // at this point, we are only looking for management frames that are BEACONS
-    if (stype == 8)
-    {
-      // make sense out of the payload
-      const wifi_ieee80211_beacon_t* beacon = (wifi_ieee80211_beacon_t*)hdr->frame;
-      const wifi_ieee80211_beacon_element_t* element = &beacon->element;
-      
-      // a place to store the results
-      found_beacon_t bcn;
-      memset(bcn.ssid, 0, 33);
-
-      // this is a beacon, so the first element should be SSID - this is a sanity check
-      if (element->element_id == 0)
-      {
-        // element length is the length of the SSID char array.  NOT ZERO TERMED, max 32 chars
-        if (element->length)
-        {
-          memcpy(bcn.ssid, element->data, element->length);
-        }
-        else
-        {
-          // does someone feel smart?  :/
-          strncpy(bcn.ssid, "<HIDDEN>", 32);
-        }
-
-        // populate the rest of the the results
-        bcn.channel = channels[channelInx]; // wifi channel
-        bcn.rssi = ppkt->rx_ctrl.rssi;      // signal strength
-        memcpy(bcn.mac, hdr->addr2, 6);     // MAC of the WiFi AP that sent the beacon
-
-        // generate a key for the std::map - this will be the md5 hash of the found beacon struct
-        hasher.begin();
-        hasher.add((uint8_t*)&bcn, sizeof(bcn) - 1);  // do not include RSSI in key; we'll get multiple reads for the 
-        hasher.calculate();                           // beacon, and end up with dups in the map due to varying signal
-        hasher.getBytes(md5sum);
-
-        // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
-        uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
-        
-        // have we seen this one already?
-        std::map<uint32_t, found_beacon_t>::iterator it = beacons.find(key);
-        if (it == beacons.end())
-        {
-          // no?  then add it
-          beacons[key] = bcn;
-        }
-      }
-    }
+    pktLen -= fixedParameterLength[stype];
   }
+  else
+  {
+    return; // this is one of the short management packets without any tagged data
+  }
+
+  // make sense out of the payload.  This depends a lot on the frame subtype; each subtype
+  // has zero or more bytes if "fixed data", followed by zero or more tagged parameters.
+  // skip past the fixed data bytes to get to the first tagged parameter
+  const wifi_ieee80211_mgmt_tagged_parameters_t* taggedPar = (wifi_ieee80211_mgmt_tagged_parameters_t*)&hdr->frame[fixedParameterLength[stype]];
+
+  // a place to store the results
+  found_flock_t wifi;
+  wifi.method = WIFI_DISCOVERY;         // we found this device through wifi
+  wifi.subtype = stype;                 // keep track of the frame subtype
+  memset(wifi.ssid, 0, SSID_LEN + 1);   // clear buffer for ssid
+
+  // iterate over element data
+  if (pktLen > sizeof(wifi_ieee80211_mgmt_tagged_parameters_t))
+  {
+    // is this element an SSID?
+    if (taggedPar->parameter_id == 0)
+    {
+      // element length is the length of the SSID char array.  NOT ZERO TERMED, max 32 chars
+      if (taggedPar->length)
+      {
+        memcpy(wifi.ssid, taggedPar->data, taggedPar->length);
+      }
+      else
+      {
+        // does someone feel smart?  :/
+        strncpy(wifi.ssid, "<HIDDEN>", SSID_LEN);
+      }
+
+      // populate the rest of the the results
+      wifi.channel = channels[channelInx]; // wifi channel
+      wifi.rssi = ppkt->rx_ctrl.rssi;      // signal strength
+      memcpy(wifi.mac, hdr->addr2, 6);     // MAC of the WiFi AP that sent the beacon
+
+      // generate a key for the std::map - this will be the md5 hash of the found beacon struct
+      hasher.begin();
+      hasher.add((uint8_t*)&wifi, sizeof(wifi) - 1);  // do not include RSSI in key; we'll get multiple reads for the 
+      hasher.calculate();                             // beacon, and end up with dups in the map due to varying signal
+      hasher.getBytes(md5sum);
+
+      // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
+      uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
+      
+      // have we seen this one already?
+      cit = devices.find(key);
+      if (cit == devices.end())
+      {
+        // no?  then add it
+        devices[key] = wifi;
+      }
+    } // this element is an SSID
+  } // This is an element
 }
 
 
@@ -150,10 +205,18 @@ bool SCANNER::begin()
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
-  delay(200);
 
-  esp_wifi_set_promiscuous(false);   
+  // turn off promiscuity for now
+  esp_wifi_set_promiscuous(false);
+
+  // we're only interested in MANAGEMENT frames
+	const wifi_promiscuous_filter_t filt = {.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT};
+	esp_wifi_set_promiscuous_filter(&filt); 
+
+  // set callback
   esp_wifi_set_promiscuous_rx_cb(&wifi_pkt_hndlr);
+
+  // start with first channel
   esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
   
   return (true);
@@ -166,7 +229,7 @@ bool SCANNER::begin()
 void SCANNER::survey(uint32_t timing)
 {
   uint32_t msnow = millis();
-  beacons.clear();
+  devices.clear();
 
   Serial.printf(CLI_CYA "Survey starting\r\n" CLI_RESET);
   channelInx = 0;
@@ -198,14 +261,51 @@ void SCANNER::survey(uint32_t timing)
     }
   }
 
-  Serial.printf(CLI_YEL "Found beacons:\r\n" CLI_RESET);
-  for (std::map<uint32_t, found_beacon_t>::const_iterator it = beacons.begin(); it != beacons.end(); ++it)
+  Serial.printf(CLI_YEL "Found device:\r\n" CLI_RESET);
+  for (cit = devices.begin(); cit != devices.end(); ++cit)
   {
-    Serial.printf(CLI_YEL "MAC:" CLI_GRN "%02x:%02x:%02x:%02x:%02x:%02x" CLI_YEL ", CH:" CLI_GRN "%d" 
+    Serial.printf(CLI_YEL "Method:" CLI_GRN "%s" CLI_YEL ", Subtype:" CLI_GRN "%s"
+                  CLI_YEL ", MAC:" CLI_GRN "%02x:%02x:%02x:%02x:%02x:%02x" CLI_YEL ", CH:" CLI_GRN "%d" 
                   CLI_YEL ", SSID:" CLI_GRN "%s" CLI_YEL ", RSSI:" CLI_GRN "%d\r\n" CLI_RESET,
-                  it->second.mac[0], it->second.mac[1], it->second.mac[2], it->second.mac[3], it->second.mac[4], it->second.mac[5], 
-                  it->second.channel, it->second.ssid, it->second.rssi);
+                  discoveryToText(cit->second.method), mgmtSubtypeToText(cit->second.subtype),
+                  cit->second.mac[0], cit->second.mac[1], cit->second.mac[2], cit->second.mac[3], cit->second.mac[4], cit->second.mac[5], 
+                  cit->second.channel, cit->second.ssid, cit->second.rssi);
   }
 
   Serial.printf(CLI_CYA "Survey done\r\n" CLI_RESET);
+}
+
+const char* discoveryToText(FLOCK_DISCOVERY_METHOD meth)
+{
+  switch (meth)
+  {
+    case NO_DISCOVERY:      return ("Unknown");
+    case WIFI_DISCOVERY:    return ("WiFi");
+    case BTLE_DISCOVERY:    return ("BTLE");
+  }
+
+  return ("");
+}
+
+const char* mgmtSubtypeToText(uint8_t stype)
+{
+  switch (stype)
+  {
+    case MGMT_FRAME_SUBTYPE_ASSOCIATION_REQUEST:      return ("associaton request");
+    case MGMT_FRAME_SUBTYPE_ASSOCIATION_RESPONSE:     return ("association response");
+    case MGMT_FRAME_SUBTYPE_REASSOCIATION_REQUEST:    return ("reassociation request");
+    case MGMT_FRAME_SUBTYPE_REASSOCIATION_RESPONSE:   return ("reassociation response");
+    case MGMT_FRAME_SUBTYPE_PROBE_REQUEST:            return ("probe request");
+    case MGMT_FRAME_SUBTYPE_PROBE_RESPONSE:           return ("probe response");
+    case MGMT_FRAME_SUBTYPE_TIMING_ADVERTISEMENT:     return ("timing advertisement");
+    case MGMT_FRAME_SUBTYPE_BEACON:                   return ("beacon");
+    case MGMT_FRAME_SUBTYPE_ATIM:                     return ("ATIM");
+    case MGMT_FRAME_SUBTYPE_DISASSOCIATION:           return ("disassociation");
+    case MGMT_FRAME_SUBTYPE_AUTHENTICATION:           return ("authentication");
+    case MGMT_FRAME_SUBTYPE_DEAUTHENTICATION:         return ("deauthentication");
+    case MGMT_FRAME_SUBTYPE_ACTION:                   return ("action");
+    case MGMT_FRAME_SUBTYPE_ACTION_NO_ACK:            return ("action no-ack");
+  }
+
+  return ("");
 }

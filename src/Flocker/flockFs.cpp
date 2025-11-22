@@ -1,5 +1,4 @@
 #include "flockFs.h"
-#include "cstring"
 #include <esp_psram.h>
 
 #include "globals.h"
@@ -15,7 +14,7 @@ bool MBFS::begin()
   return (true);
 }
 
-size_t MBFS::list(std::vector<const char*>& files)
+size_t MBFS::list(std::vector<std::string>& files)
 {
     File root = LittleFS.open("/");
     File file = root.openNextFile();
@@ -24,9 +23,10 @@ size_t MBFS::list(std::vector<const char*>& files)
     
     while(file)
     {
-        files.push_back(file.name());
+        files.push_back(std::string(file.name()));
         file = root.openNextFile();
     }
+
     return (files.size());
 }
 

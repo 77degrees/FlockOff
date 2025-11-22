@@ -12,31 +12,40 @@
 void onCommand(EmbeddedCli *embeddedCli, CliCommand *command);
 void writeChar(EmbeddedCli *embeddedCli, char c);
 
+/********************************************************
+* Command line handler callback functions:
+********************************************************/
+// perform a manual device wireless survey
 void onSurvey(EmbeddedCli* cli, char* args, void* context);
+// clear terminal
 void onClear(EmbeddedCli* cli, char* args, void* context);
+// reset device (close filesystem first)
 void onReset(EmbeddedCli* cli, char* args, void* context);
-void onFSinfo(EmbeddedCli* cli, char* args, void* context);
+// filesystem utils; ls, rm, mv, cp, cat
 void onLs(EmbeddedCli* cli, char* args, void* context);
 void onDel(EmbeddedCli* cli, char* args, void* context);
-void onWrite(EmbeddedCli* cli, char* args, void* context);
 void onMv(EmbeddedCli* cli, char* args, void* context);
 void onCp(EmbeddedCli* cli, char* args, void* context);
 void onCat(EmbeddedCli* cli, char* args, void* context);
+// write test file
+void onWrite(EmbeddedCli* cli, char* args, void* context);
+// get system status
 void onStatus(EmbeddedCli* cli, char* args, void* context);
+// config timezone
 void onTimeZone(EmbeddedCli* cli, char* args, void* context);
 
-const struct CliCommandBinding bindings[] = {{"survey", "Perform Wifi survey", "survey [interval] - channel hop interval in milliseconds", true, nullptr, onSurvey},
-                                             {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
-                                             {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
-                                             {"fsinfo", "Get filesystem information", "Get total and free space in filesystem", false, nullptr, onFSinfo},
-                                             {"ls", "List files", "List files in filesystem", false, nullptr, onLs},
-                                             {"rm", "Delete file", "<filename> to delete", true, nullptr, onDel},
-                                             {"write", "Write test file", "-f <filename> -d <string to write to file>", true, nullptr, onWrite},
-                                             {"mv", "Rename file", "<original filename> <new filename>", true, nullptr, onMv},
-                                             {"cp", "Copy file", "<source filename> <destination filename>", true, nullptr, onCp},
-                                             {"cat", "Cat file", "<filename> file to read", true, nullptr,  onCat},
-                                             {"status", "Get system status", "Get system status", false, nullptr, onStatus},
-                                             {"timezone", "Set time zone", "Set time zone, updates config structs", false, nullptr, onTimeZone}};
+const struct CliCommandBinding bindings[] = {
+  {"survey", "Perform Wifi survey", "survey [interval] - channel hop interval in milliseconds", true, nullptr, onSurvey},
+  {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
+  {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
+  {"ls", "List files", "List files in filesystem", false, nullptr, onLs},
+  {"rm", "Delete file", "<filename> to delete", true, nullptr, onDel},
+  {"write", "Write test file", "-f <filename> -d <string to write to file>", true, nullptr, onWrite},
+  {"mv", "Rename file", "<original filename> <new filename>", true, nullptr, onMv},
+  {"cp", "Copy file", "<source filename> <destination filename>", true, nullptr, onCp},
+  {"cat", "Cat file", "<filename> file to read", true, nullptr,  onCat},
+  {"status", "Get system status", "Get system status", false, nullptr, onStatus},
+  {"timezone", "Set time zone", "Set time zone, updates config structs", false, nullptr, onTimeZone}};
 
 const size_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
 
@@ -67,29 +76,17 @@ void onClear(EmbeddedCli *cli, char *args, void *context)
     Serial.printf(CLI_CLEAR);
 }
 
-void onFSinfo(EmbeddedCli *cli, char *args, void *context)
-{
-  size_t cap;
-  size_t used;
-  flockfs.getInfo(&cap, &used);
-  Serial.printf(CLI_YEL "Total file system size " CLI_BOLD_GRN "%d" CLI_YEL " bytes, " 
-                CLI_BOLD_GRN "%d" CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_YEL " KiB free)\r\n" CLI_RESET,
-            cap, used, (cap - used) / 1024);
-
-}
-
 void onLs(EmbeddedCli *cli, char *args, void *context)
 {
-  std::vector<const char*>files;
+  std::vector<std::string>files;
+  std::vector<std::string>::const_iterator filesCit;
   size_t count = flockfs.list(files);
 
   Serial.printf(CLI_CYA "Filesystem is holding %d files:\r\n" CLI_RESET, count);
 
-  for (std::vector<const char*>::iterator it = files.begin(); it != files.end(); ++it)
+  for (filesCit = files.begin(); filesCit != files.end(); ++filesCit)
   {
-    char f[128] = {0};
-    strncpy(f, *it, 127);
-    Serial.printf(CLI_GRN "  %s\r\n" CLI_RESET, *it);
+    Serial.printf(CLI_GRN "\t%6d  %s\r\n" CLI_RESET, flockfs.getFileSize(filesCit->c_str()), filesCit->c_str());
   }
 }
 
@@ -131,7 +128,7 @@ void onDel(EmbeddedCli* cli, char* args, void* context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename to delete.\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename. " CLI_YEL "Usage: rm <filename>\r\n" CLI_RESET);
   }
 }
 
@@ -188,7 +185,7 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
     ssize_t fileLen = flockfs.getFileSize(fname);
     if (fileLen == -1)
     {
-      Serial.printf("Unable to open %s\r\n", fname);
+      Serial.printf(CLI_BOLD_RED "File not found.\r\n" CLI_RESET, fname);
       return;
     }
 
@@ -211,7 +208,7 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename to cat.\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename." CLI_YEL " Usage: cat <filename>\r\n" CLI_RESET);
   }
 }
 
@@ -251,15 +248,20 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
     Serial.printf(CLI_BOLD_RED "\tNo GPS position fix\r\n" CLI_RESET);
   }
 
-  Serial.printf(CLI_CYA "->Filesystem:\r\n\t" CLI_RESET);
-  onFSinfo(NULL, NULL, NULL);
+  Serial.printf(CLI_CYA "->Filesystem:\r\n" CLI_RESET);
+  size_t cap;
+  size_t used;
+  flockfs.getInfo(&cap, &used);
+  Serial.printf(CLI_YEL "\tTotal capacity " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "bytes, " 
+                CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "KiB free)\r\n" CLI_RESET,
+                cap, used, (cap - used) / 1024);
 
   Serial.printf(CLI_CYA "->Memories:\r\n" CLI_RESET);
-  Serial.printf(CLI_YEL "\tInternal total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " bytes, " CLI_BOLD_GRN "%d" 
-                CLI_RESET " " CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " KiB free)\r\n" CLI_RESET,
+  Serial.printf(CLI_YEL "\tInternal total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "bytes, " CLI_BOLD_GRN "%d" 
+                CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "KiB free)\r\n" CLI_RESET,
                 ESP.getHeapSize(), (ESP.getHeapSize() - ESP.getFreeHeap()), ESP.getFreeHeap() / 1024);
-  Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " bytes, " CLI_BOLD_GRN "%d"
-                CLI_RESET " " CLI_YEL " used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " KiB free)\r\n" CLI_RESET,
+  Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "bytes, " CLI_BOLD_GRN "%d"
+                CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "KiB free)\r\n" CLI_RESET,
                 ESP.getPsramSize(), (ESP.getPsramSize() - ESP.getFreePsram()), ESP.getPsramSize() / 1024);
 
   Serial.printf(CLI_CYA "->Wall clock:\r\n" CLI_RESET);

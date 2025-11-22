@@ -8,8 +8,9 @@
 #include "flockCfg.h"
 #include "scanner.h"
 
+
 /**********************************
-gobal classes/constants/variables
+* gobal classes/constants/variables
 **********************************/
 extern NMEAGPS gps;
 extern MBFS flockfs;
@@ -18,9 +19,29 @@ extern SCANNER flockScan;
 extern bool psRamInitOk;
 extern bool initOk;
 
+
 /**********************************
-#defines for CLI/serial output
-colors (macros for ANSII codes)
+* global defines
+**********************************/
+#define SSID_LEN  32  // 802.11 max SSID length
+
+
+/**********************************
+# enum discovery method
+**********************************/
+enum FLOCK_DISCOVERY_METHOD
+{
+  NO_DISCOVERY = 0,
+  WIFI_DISCOVERY,
+  BTLE_DISCOVERY
+};
+
+const char* discoveryToText(FLOCK_DISCOVERY_METHOD meth);
+const char* mgmtSubtypeToText(uint8_t stype);
+
+/**********************************
+* #defines for CLI/serial output
+* colors (macros for ANSII codes)
 **********************************/
 #define CLI_RESET "\x1b[0m"
 #define CLI_CLEAR "\x1b[2J"

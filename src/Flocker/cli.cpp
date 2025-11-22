@@ -46,7 +46,7 @@ bool setupCLI()
 
   if (initOk)
   {
-    //Serial.printf(CLI_CLEAR);
+    Serial.printf(CLI_CLEAR);
   }
 
   Serial.printf(CLI_BOLD_RED "   /$$$$$$$$ /$$                     /$$              /$$$$$$   /$$$$$$   /$$$$$$\r\n");
