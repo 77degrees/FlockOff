@@ -21,12 +21,6 @@ public:
 
   void getTime(struct tm* tm)  { memcpy(tm, &localtm, sizeof(struct tm)); }
 
-  void getDataRate(enum minmea_sentence_id sid);
-  
-  void setDebug(bool on);
-
-  void testFunc();
-
 private:
   EspSoftwareSerial::UART gpsPort;
   LEDS leds;

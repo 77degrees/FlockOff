@@ -4,13 +4,20 @@
 
 #include "globals.h"
 
+// JSON keys for config set
 #define FLOCKTYPE "flockType"
 #define TIMEZONE "timeZone"
 #define WIFIAPS "WifiAPs"
 
+// name of configuration file
 #define CONFIG_FILENAME "config.json"
+#define CONFIG_BACKUP_FILENAME "config.bak"
+
+// default WiFi names corresponding to know surveillance devices.  This
+// list is the initial - more can be added later by the user
 const char* defaultWiFiAPs[] = {"flock", "fs ext Battery", "penguin", "pigvision"};
 
+// Struct for following list of timezones
 struct cfg_tz_t
 {
     uint8_t inx;
@@ -18,6 +25,8 @@ struct cfg_tz_t
     const char* tz;
 };
 
+// List of timezones to select from.  This is a very US-centric
+// list, with default "offset from GMT" zones included
 const cfg_tz_t zones[] = {{0, "default CSD/CDT", "CST6CDT,M3.2.0,M11.1.0"},
                           {1, "America/Anchorage", "AKST9AKDT,M3.2.0,M11.1.0"},
                           {2, "America/Chicago", "CST6CDT,M3.2.0,M11.1.0"},
@@ -100,8 +109,8 @@ bool CONFIG::buildDefualtConfig()
 {
   flockfs.deleteFile(CONFIG_FILENAME);
 
-  cfg[FLOCKTYPE] = "Generic ESP32S3";
-  cfg[TIMEZONE] = "CST6CDT,M3.2.0,M11.1.0";
+  cfg[FLOCKTYPE] = "Generic ESP32S3";         // tag that can be added to data
+  cfg[TIMEZONE] = "CST6CDT,M3.2.0,M11.1.0";   // my timezone :)
 
   JsonArray wifiAPs = cfg[WIFIAPS].to<JsonArray>();
 
@@ -115,21 +124,25 @@ bool CONFIG::buildDefualtConfig()
   return (this->writeConfig());
 }
 
+// Pretty-print JSON configuration
 void CONFIG::outputJson()
 {
-  Serial.printf(CLI_BOLD_GRN);
+  Serial.printf(CLI_GRN);
   serializeJsonPretty(cfg, Serial);
   Serial.printf("\r\n" CLI_RESET);
 }
 
+// Start a menu-driven time zone selection chingus
 void CONFIG::selectTimeZone()
 {
+  // print all of the available timezones in two columns
   for (size_t ii = 1; ii < tzCount / 2; ++ii)
   {
-    Serial.printf(CLI_YEL " %2d)" CLI_BOLD_GRN " %-30s " CLI_YEL " %2d) " CLI_BOLD_GRN "%s\r\n" CLI_RESET, ii, zones[ii].desc, ii + 21, zones[ii + 21].desc);
+    Serial.printf(CLI_YEL " %2d)" CLI_BOLD_GRN " %-30s " CLI_YEL " %2d) " CLI_BOLD_GRN "%s\r\n" 
+        CLI_RESET, ii, zones[ii].desc, ii + 21, zones[ii + 21].desc);
   }
 
-  holdCLI(true);
+  holdCLI(true);  // steal serial input from CLI handler
   Serial.printf("Select timezone by number: ");
 
   char tzInput[14] = {0};
@@ -148,7 +161,8 @@ void CONFIG::selectTimeZone()
       if (posn)
       {
         --posn;
-        Serial.printf("\bX\b");
+        Serial.printf(CLI_BACKSPACE);
+        Serial.printf(CLI_DELETE);
       }
     }
     else
@@ -168,6 +182,7 @@ void CONFIG::selectTimeZone()
 
   cfg[TIMEZONE] = zones[selected].tz;
   this->setTimeZone();
+  this->writeConfig();
 }
 
 void CONFIG::setTimeZone()
@@ -193,10 +208,10 @@ bool CONFIG::writeConfig()
     return(retVal);
   }
 
+  flockfs.renameFile(CONFIG_FILENAME, CONFIG_BACKUP_FILENAME);
+
   memset(cfgjson, 0, 2048);
-  
   serializeJson(cfg, cfgjson, 2047);
-  flockfs.deleteFile(CONFIG_FILENAME);
   
   if (flockfs.writeFile(CONFIG_FILENAME, (uint8_t*)cfgjson, strlen(cfgjson)) == -1)
   {
@@ -208,6 +223,5 @@ bool CONFIG::writeConfig()
   }
   
   free(cfgjson);
-
   return (retVal);
 }

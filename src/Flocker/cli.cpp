@@ -7,12 +7,14 @@
 
 #include "globals.h"
 
+// This define has to be included in exactly one translation unit
+// of the project.  See ./embedded_cli.h for info
 #define EMBEDDED_CLI_IMPL
 #include "embedded_cli.h"
 #include "cli_impl.h"
 
 static EmbeddedCli *cli = NULL;
-static CLI_UINT* cliBuffer = NULL; //[BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE)];
+static CLI_UINT* cliBuffer = NULL;  // will be allocated in PSRAM by embeddedCliNew()
 static bool cliIsHeld = false;
 
 bool setupCLI()
@@ -29,7 +31,7 @@ bool setupCLI()
   config->invitation = "Flock Off $> ";
   cli = embeddedCliNew(config, true);
 
-  if (cli == NULL)
+  if (!cli)
   {
       Serial.printf("Cli was not created. Check sizes!\r\n");
       return (false);
@@ -41,8 +43,8 @@ bool setupCLI()
     embeddedCliAddBinding(cli, bindings[ii]);
   }
 
-  cli->onCommand = onCommand;
-  cli->writeChar = writeChar;
+  cli->onCommand = onCommand; // handler for unknown command
+  cli->writeChar = writeChar; // copy from serial in to cli handler
 
   if (initOk)
   {

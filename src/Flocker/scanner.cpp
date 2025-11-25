@@ -2,17 +2,17 @@
 
 #include <WiFi.h>
 #include <MD5Builder.h>
+#include <ArduinoJson.h>
 
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
-#include "nvs_flash.h"
 
 #include "scanner.h"
 
 #include "globals.h"
 
 // We're only looking at management 802.11 frames.  There are 16
-// subtypes of management frames (asdefined here).  The packet
+// subtypes of management frames (as #defined here).  The packet
 // structure is different for each subtype, but in general:
 //   HEADER (fixed size)
 //   FIXED DATA (variable number of bytes, zero or more)
@@ -108,9 +108,8 @@ static std::map<uint32_t, found_flock_t>::const_iterator cit;
 * Promiscuous mode packet callback handler
 *
 **************************************************
-* If an 802.11 packet of the WIFI_MANAGEMENT is is
-* seen, and if that packet is of subtype BEACON,
-* then add it to a std::map of results.  
+* If an 802.11 packet of the WIFI_MANAGEMENT is
+* seen, add it to a std::map of results.  
 *
 * Note, before adding, check to see if that one
 * is already in the map to prevent dups
@@ -147,7 +146,8 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
   // make sense out of the payload.  This depends a lot on the frame subtype; each subtype
   // has zero or more bytes if "fixed data", followed by zero or more tagged parameters.
   // skip past the fixed data bytes to get to the first tagged parameter
-  const wifi_ieee80211_mgmt_tagged_parameters_t* taggedPar = (wifi_ieee80211_mgmt_tagged_parameters_t*)&hdr->frame[fixedParameterLength[stype]];
+  const wifi_ieee80211_mgmt_tagged_parameters_t* taggedPar = 
+        (wifi_ieee80211_mgmt_tagged_parameters_t*)&hdr->frame[fixedParameterLength[stype]];
 
   // a place to store the results
   found_flock_t wifi;
@@ -155,14 +155,16 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
   wifi.subtype = stype;                 // keep track of the frame subtype
   memset(wifi.ssid, 0, SSID_LEN + 1);   // clear buffer for ssid
 
-  // iterate over element data
+  // try to get SSID tagged parameter
   if (pktLen > sizeof(wifi_ieee80211_mgmt_tagged_parameters_t))
+  
   {
-    // is this element an SSID?
+    // is this parameter an SSID?
     if (taggedPar->parameter_id == 0)
     {
-      // element length is the length of the SSID char array.  NOT ZERO TERMED, max 32 chars
-      if (taggedPar->length)
+      // parameter length is the length of the SSID char array.  
+      // NOT ZERO TERMED, max 32 chars
+      if (taggedPar->length && (taggedPar->length < SSID_LEN))
       {
         memcpy(wifi.ssid, taggedPar->data, taggedPar->length);
       }
@@ -175,16 +177,18 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
       // populate the rest of the the results
       wifi.channel = channels[channelInx]; // wifi channel
       wifi.rssi = ppkt->rx_ctrl.rssi;      // signal strength
-      memcpy(wifi.mac, hdr->addr2, 6);     // MAC of the WiFi AP that sent the beacon
+      memcpy(wifi.mac, hdr->addr3, 6);     // MAC of the WiFi AP that sent the packet
 
-      // generate a key for the std::map - this will be the md5 hash of the found beacon struct
+      // generate a key for the std::map - this will be the md5 hash of the found packet struct
+      // Note, do not include the RSSI in the hash, or we'll end up with dups in the map
       hasher.begin();
-      hasher.add((uint8_t*)&wifi, sizeof(wifi) - 1);  // do not include RSSI in key; we'll get multiple reads for the 
-      hasher.calculate();                             // beacon, and end up with dups in the map due to varying signal
+      hasher.add((uint8_t*)&wifi, sizeof(wifi) - 1);
+      hasher.calculate();
       hasher.getBytes(md5sum);
 
       // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
-      uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
+      uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | 
+                     ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
       
       // have we seen this one already?
       cit = devices.find(key);
@@ -226,7 +230,7 @@ bool SCANNER::begin()
 * Do a single pass through all WiFi channels to see
 * what we can find out there.
 *****************************************************/
-void SCANNER::survey(uint32_t timing)
+void SCANNER::survey(uint32_t interval, const char* fname, bool doJson, const char* notes)
 {
   uint32_t msnow = millis();
   devices.clear();
@@ -241,7 +245,7 @@ void SCANNER::survey(uint32_t timing)
 
   while (scanning)
   {
-    if ((millis() - msnow) > timing)
+    if ((millis() - msnow) > interval)
     {
       msnow = millis();
       ++channelInx;
@@ -261,18 +265,61 @@ void SCANNER::survey(uint32_t timing)
     }
   }
 
-  Serial.printf(CLI_YEL "Found device:\r\n" CLI_RESET);
+  JsonDocument sur;
+  if (notes && strlen(notes))     sur["SurveyNotes"] = notes;
+  else                            sur["SurveyNotes"] = "Generic survey";
+
+  JsonArray location = sur["LocationLongLat"].to<JsonArray>();
+  location.add(gps.getLongitude());
+  location.add(gps.getLatitude());
+
+  time_t t = time(NULL);
+  tm *tmp;
+  tmp = localtime(&t);
+  char tstring[64];
+  strftime(tstring, 63, "%F %T", tmp);
+  sur["DateTime"] = tstring;
+  sur["Timezone"] = flockCfg.getTimeZone();
+
+  JsonArray devs = sur["Devices"].to<JsonArray>();
+  JsonDocument dev;
+
   for (cit = devices.begin(); cit != devices.end(); ++cit)
   {
-    Serial.printf(CLI_YEL "Method:" CLI_GRN "%s" CLI_YEL ", Subtype:" CLI_GRN "%s"
-                  CLI_YEL ", MAC:" CLI_GRN "%02x:%02x:%02x:%02x:%02x:%02x" CLI_YEL ", CH:" CLI_GRN "%d" 
-                  CLI_YEL ", SSID:" CLI_GRN "%s" CLI_YEL ", RSSI:" CLI_GRN "%d\r\n" CLI_RESET,
-                  discoveryToText(cit->second.method), mgmtSubtypeToText(cit->second.subtype),
-                  cit->second.mac[0], cit->second.mac[1], cit->second.mac[2], cit->second.mac[3], cit->second.mac[4], cit->second.mac[5], 
-                  cit->second.channel, cit->second.ssid, cit->second.rssi);
+    dev.clear();
+    dev["Method"] = discoveryToText(cit->second.method);
+    dev["Subtype"] = mgmtSubtypeToText(cit->second.subtype);
+    dev["BSSID"] = macToText(cit->second.mac);
+    dev["Channel"] = cit->second.channel;
+    dev["SSID"] = cit->second.ssid;
+    dev["RSSSI"] = cit->second.rssi;
+
+    devs.add(dev);
   }
 
-  Serial.printf(CLI_CYA "Survey done\r\n" CLI_RESET);
+  Serial.printf(CLI_CYA "Found " CLI_GRN "%d" CLI_CYA " devices:\r\n" CLI_RESET, devices.size());
+  serializeJsonPretty(sur, Serial);
+  Serial.printf("\r\n");
+
+  if (fname && strlen(fname))
+  {
+    Serial.printf(CLI_CYA "Saving survey results to " CLI_GRN "%s" CLI_CYA ", format " CLI_YEL "%s\r\n" CLI_RESET,
+      fname, doJson ? "JSON" : "text");
+
+    char* output = (char*)ps_malloc(4097);
+    memset(output, 0, 4097);
+
+    //if (doJson)
+    {
+ 
+      serializeJson(sur, output, 4096);
+      
+      size_t written = flockfs.writeFile(fname, (uint8_t*)output, strlen(output));
+      Serial.printf(CLI_CYA "Wrote " CLI_GRN "%d" CLI_CYA " bytes to file\r\n" CLI_RESET, written);
+    }
+
+    free (output);
+  }
 }
 
 const char* discoveryToText(FLOCK_DISCOVERY_METHOD meth)
@@ -308,4 +355,17 @@ const char* mgmtSubtypeToText(uint8_t stype)
   }
 
   return ("");
+}
+
+const char* macToText(const uint8_t* mac)
+{
+  static char ret[20];
+  if (!mac)
+  {
+    return (NULL);
+  }
+
+  snprintf(ret, 19, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  return (ret);
 }

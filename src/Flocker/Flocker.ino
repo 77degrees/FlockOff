@@ -3,7 +3,7 @@
 *  + Board: ESP32S3 Dev Module
 *  + USB CDC on Boot: Enabled
 *  + Flash: 8MB
-*  + Partition: 8MB with spiffs
+*  + Partition: custom
 *  + PSRAM: OPI PSRAM
 ***********************************************************************/
 //#include <esp_psram.h>

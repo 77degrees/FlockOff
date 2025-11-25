@@ -38,6 +38,7 @@ enum FLOCK_DISCOVERY_METHOD
 
 const char* discoveryToText(FLOCK_DISCOVERY_METHOD meth);
 const char* mgmtSubtypeToText(uint8_t stype);
+const char* macToText(const uint8_t* mac);
 
 /**********************************
 * #defines for CLI/serial output
@@ -45,6 +46,8 @@ const char* mgmtSubtypeToText(uint8_t stype);
 **********************************/
 #define CLI_RESET "\x1b[0m"
 #define CLI_CLEAR "\x1b[2J"
+#define CLI_BACKSPACE "\x1b[D"
+#define CLI_DELETE "\x1B[P"
 
 #define CLI_BLK "\x1b[30m"
 #define CLI_RED "\x1b[31m"

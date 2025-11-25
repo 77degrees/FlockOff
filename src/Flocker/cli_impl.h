@@ -7,8 +7,6 @@
 #define CLI_HISTORY_SIZE_PS 64
 #define CLI_BINDING_COUNT_PS 20
 
-#define CLI_ERROR(x)  CLI_BOLD_RED x CLI_RESET
-
 void onCommand(EmbeddedCli *embeddedCli, CliCommand *command);
 void writeChar(EmbeddedCli *embeddedCli, char c);
 
@@ -34,8 +32,21 @@ void onStatus(EmbeddedCli* cli, char* args, void* context);
 // config timezone
 void onTimeZone(EmbeddedCli* cli, char* args, void* context);
 
+
+
+/*******************************************************
+* Binding struct for each command:
+ struct CliCommandBinding {
+    const char *name;       <--- command as entered on CLI
+    const char *shortHelp;  <--- description shown with help command
+    const char *help;       <--- detaild help shown with -h parameter on command
+    bool tokenizeArgs;      <--- true if there are args
+    void *context;          <--- data passed to handler if no args (not used here)
+    void (*binding)(EmbeddedCli *cli, char *args, void *context);  <--- callback/command handler
+  };
+*******************************************************/
 const struct CliCommandBinding bindings[] = {
-  {"survey", "Perform Wifi survey", "survey [interval] - channel hop interval in milliseconds", true, nullptr, onSurvey},
+  {"survey", "Perform Wifi survey", "survey [-i <interval_in_ms>] [-f <filename>] [-j]", true, nullptr, onSurvey},
   {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
   {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
   {"ls", "List files", "List files in filesystem", false, nullptr, onLs},
@@ -49,33 +60,175 @@ const struct CliCommandBinding bindings[] = {
 
 const size_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
 
+/******************************************************
+* onCommand()
+*******************************************************
+* Command handler for unknown commands.  Just output
+* an error message and remind user of 'help'
+******************************************************/
 void onCommand(EmbeddedCli *embeddedCli, CliCommand *command)
 {
   Serial.printf("%sCommand not found: '%s'%s.  Use 'help' for command list.\r\n",
       CLI_BOLD_RED, command->name, CLI_RESET);
 }
 
+/******************************************************
+* writeChar()
+*******************************************************
+* callback for CLI loop to know how to send chars back
+* to user.  Serial, in this case
+******************************************************/
 void writeChar(EmbeddedCli *embeddedCli, char c)
 {
   Serial.write(c);
 }
 
+/******************************************************
+* onSurvey()
+*******************************************************
+* Command to perform a single scan for wireless devices
+* both WiFi and BLE.  Note that this will populate a
+* results set with EVERYTHING seen, not just known
+* Flock/survellance devices
+*
+* Parameters:
+*   -h - show help
+*   -i <interval> - how much time (in ms) to spend on
+*                   each WiFi channel and on BLE
+*   -f <filename> - save results to specified filename
+*   -j <notes>    - save file as JSON (requires -f paramter)
+*
+******************************************************/
 void onSurvey(EmbeddedCli* cli, char* args, void* context)
 { 
-  uint32_t timing = 1000; 
-  if (embeddedCliGetTokenCount(args) == 1)
+  bool paramErr = false;
+  bool doFile = false;
+  bool doJson = false;
+  uint32_t interval = 1000; 
+  char fname[64] = {0};
+  char notes[128] = {0};
+  size_t argc = embeddedCliGetTokenCount(args);
+
+  if (argc > 0)
   {
-    timing = atoi(embeddedCliGetToken(args, 1));
+    for (size_t ii = 1; ii <= argc; ++ii)
+    {
+      const char* argv = embeddedCliGetToken(args, ii);
+
+      if (strlen(argv) > 1)
+      {
+        if (argv[0] == '-')
+        {
+          if (argv[1] == 'j')
+          {
+            doJson = true;          
+            ++ii;
+            if (ii <= argc)
+            {
+              argv = embeddedCliGetToken(args, ii);
+              if (argv[0] == '-')
+              {
+                paramErr = true;
+                break;
+              }
+              strncpy(notes, embeddedCliGetToken(args, ii), 127);
+            }
+            else
+            {
+              paramErr = true;
+              break;
+            }
+          } // extracting JSON (and notes)
+          else if (argv[1] == 'i')
+          {
+            ++ii;
+            if (ii <= argc)
+            {
+              argv = embeddedCliGetToken(args, ii);
+              if (argv[0] == '-')
+              {
+                paramErr = true;
+                break;
+              }
+              interval = atoi(argv);
+            }
+            else
+            {
+              paramErr = true;
+              break;
+            }
+          } // extracting interval
+          else if (argv[1] == 'f')
+          {
+            ++ii;
+            if (ii <= argc)
+            {
+              argv = embeddedCliGetToken(args, ii);
+              if (argv[0] == '-')
+              {
+                paramErr = true;
+                break;
+              }
+              strncpy(fname, embeddedCliGetToken(args, ii), 63);
+            }
+            else
+            {
+              paramErr = true;
+              break;
+            }
+          } // extracting filename
+          else
+          {
+            paramErr = true;
+            break;
+          }
+        }
+      }
+      else
+      {
+        paramErr = true;
+        break;
+      }
+    }
+  }
+  else
+  {
+    paramErr = true;
   }
 
-  flockScan.survey(timing);
+  if (paramErr)
+  {
+    Serial.printf(CLI_BOLD_RED "Bad parameter." CLI_YEL "Usage: survey [-i <interval>] [-f <filename>] [-j <notes>].\r\n" CLI_RESET);
+    return;
+  }
+
+  flockScan.survey(interval, fname, doJson, notes);
 }
 
+/******************************************************
+* onClear()
+*******************************************************
+* Command to clear the user's terminal (by sending
+* ASCII code for that)
+*
+* Parameters:
+*   None
+*
+******************************************************/
 void onClear(EmbeddedCli *cli, char *args, void *context)
 {
     Serial.printf(CLI_CLEAR);
 }
 
+/******************************************************
+* onLs()
+*******************************************************
+* Command to list files in the filesystem
+*
+* Parameters:
+*   None
+*
+******************************************************/
 void onLs(EmbeddedCli *cli, char *args, void *context)
 {
   std::vector<std::string>files;
@@ -90,6 +243,18 @@ void onLs(EmbeddedCli *cli, char *args, void *context)
   }
 }
 
+/******************************************************
+* onWrite()
+*******************************************************
+* Command to create a test file in the filesystem
+*
+* Parameters (positional):
+*   <filename> <string to write to file>
+*
+* Example:
+*   write test.txt "abc def ghi"
+*
+******************************************************/
 void onWrite(EmbeddedCli *cli, char *args, void *context)
 {
   if (embeddedCliGetTokenCount(args) == 2)
@@ -112,6 +277,15 @@ void onWrite(EmbeddedCli *cli, char *args, void *context)
   }
 }
 
+/******************************************************
+* onDel()
+*******************************************************
+* Command to delete a file from the filesystem
+*
+* Parameters:
+*   <file_to_delete>
+*
+******************************************************/
 void onDel(EmbeddedCli* cli, char* args, void* context)
 {
   if (embeddedCliGetTokenCount(args) == 1)
@@ -132,6 +306,15 @@ void onDel(EmbeddedCli* cli, char* args, void* context)
   }
 }
 
+/******************************************************
+* onMv()
+*******************************************************
+* Command to rename a file in the filesystem
+*
+* Parameters:
+*   <original_name> <new_name>
+*
+******************************************************/
 void onMv(EmbeddedCli* cli, char* args, void* context)
 {
   if (embeddedCliGetTokenCount(args) == 2)
@@ -154,6 +337,15 @@ void onMv(EmbeddedCli* cli, char* args, void* context)
   }
 }
 
+/******************************************************
+* onCp()
+*******************************************************
+* Command to copy a file in the filesystem
+*
+* Parameters:
+*   <original_name> <copied_name>
+*
+******************************************************/
 void onCp(EmbeddedCli* cli, char* args, void* context)
 {
   if (embeddedCliGetTokenCount(args) == 2)
@@ -176,6 +368,15 @@ void onCp(EmbeddedCli* cli, char* args, void* context)
   }
 }
 
+/******************************************************
+* onCat()
+*******************************************************
+* Command to list a file's contents
+*
+* Parameters:
+*   <filename>
+*
+******************************************************/
 void onCat(EmbeddedCli *cli, char *args, void *context)
 {
   if (embeddedCliGetTokenCount(args) == 1)
@@ -212,6 +413,16 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
   }
 }
 
+/******************************************************
+* onReset()
+*******************************************************
+* Command to reboot the system.  Will unmount filesytem
+* before rebooting, so there is a slight delay
+*
+* Parameters:
+*   None
+*
+******************************************************/
 void onReset(EmbeddedCli *cli, char *args, void *context)
 {
   LittleFS.end();
@@ -229,6 +440,19 @@ void onReset(EmbeddedCli *cli, char *args, void *context)
   while (true);
 }
 
+/******************************************************
+* onStatus()
+*******************************************************
+* Command to display system status.  This includes
+*   GPS status
+*   Filesystem status
+*   Memory (heaps) status
+*   Real time clock and timezone status
+*
+* Parameters:
+*   None
+*
+******************************************************/
 void onStatus(EmbeddedCli* cli, char* args, void* context)
 {
   Serial.printf(CLI_CYA "->GPS:\r\n" CLI_RESET);
@@ -276,6 +500,16 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
   Serial.printf(CLI_YEL "\tTimezone is set to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, flockCfg.getTimeZone());  
 }
 
+/******************************************************
+* onTimeZone()
+*******************************************************
+* Command to configure timezone.  This leads to an 
+* interactive menu thing to select the timezone
+*
+* Parameters:
+*   None
+*
+******************************************************/
 void onTimeZone(EmbeddedCli* cli, char* args, void* context)
 {
   flockCfg.selectTimeZone();

@@ -8,7 +8,7 @@ public:
   ~SCANNER() {}
 
   bool begin();
-  void survey(uint32_t timing);
+  void survey(uint32_t interval, const char* fname, bool doJson, const char* notes);
 
 private:
   
