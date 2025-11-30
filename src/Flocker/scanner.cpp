@@ -1,6 +1,9 @@
 #include <map>
 
 #include <WiFi.h>
+#include <NimBLEDevice.h>
+#include <NimBLEScan.h>
+#include <NimBLEAdvertisedDevice.h>
 #include <MD5Builder.h>
 #include <ArduinoJson.h>
 
@@ -59,14 +62,24 @@ uint8_t fixedParameterLength[] = {
 };
 
 // structure to hold details about every device found; not just
-// Flock type things at this point
-struct __attribute__((packed)) found_flock_t
+// Flock type things at this point (found by WiFi)
+struct __attribute__((packed)) found_wifi_t
 {
   FLOCK_DISCOVERY_METHOD method;
   uint8_t subtype;
   uint8_t channel;
   char ssid[SSID_LEN + 1];
   uint8_t mac[6];
+  int8_t rssi;
+};
+
+// structure to hold details about every device found; not just
+// Flock type things at this point (found by Bluetooth LE)
+struct __attribute__((packed)) found_ble_t
+{
+  FLOCK_DISCOVERY_METHOD method;
+  char name[SSID_LEN + 1];
+  uint8_t addr[6];
   int8_t rssi;
 };
 
@@ -100,9 +113,12 @@ const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
 static uint16_t channelInx = 0;   
 static bool scanning = false;
 static MD5Builder hasher;
+static NimBLEScan* btScanner = nullptr;
 static uint8_t md5sum[16];
-static std::map<uint32_t, found_flock_t> devices;
-static std::map<uint32_t, found_flock_t>::const_iterator cit;
+static std::map<uint32_t, found_wifi_t> wifiDevices;
+static std::map<uint32_t, found_wifi_t>::const_iterator citWifiDevices
+static std::map<uint32_t, found_ble_t> bleDevices;
+static std::map<uint32_t, found_ble_t>::const_iterator citBleDevices;
 
 /*************************************************
 * Promiscuous mode packet callback handler
@@ -150,7 +166,7 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
         (wifi_ieee80211_mgmt_tagged_parameters_t*)&hdr->frame[fixedParameterLength[stype]];
 
   // a place to store the results
-  found_flock_t wifi;
+  found_wifi_t wifi;
   wifi.method = WIFI_DISCOVERY;         // we found this device through wifi
   wifi.subtype = stype;                 // keep track of the frame subtype
   memset(wifi.ssid, 0, SSID_LEN + 1);   // clear buffer for ssid
@@ -191,15 +207,105 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
                      ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
       
       // have we seen this one already?
-      cit = devices.find(key);
-      if (cit == devices.end())
+      citWifiDevices = wifiDevices.find(key);
+      if (citWifiDevices == wifiDevices.end())
       {
         // no?  then add it
-        devices[key] = wifi;
+        wifiDevices[key] = wifi;
       }
     } // this element is an SSID
   } // This is an element
 }
+
+
+class btAdvertisedCBs : public NimBLEScanCallbacks
+{
+  void onResult(const NimBLEAdvertisedDevice* advertisedDevice)
+  {
+    btDevice.method = BTLE_DISCOVERY;
+    btDevice.rssi = advertisedDevice->getRSSI();
+
+    payload = advertisedDevice.getPayload();
+    citPayload = payload.begin();
+    if (citPayload == payload.end())
+    {
+      return;
+    }
+
+    for (size_t ii = 0; ii < 6; ++ii)
+    {
+      btDevice.addr[ii] = *citPayload;
+      ++citPayload;
+    }
+
+    //memcpy(btDevice.addr, advertisedDevice->getAddress().getVal(), 6);
+
+    /*
+    uint8_t mac[6];
+    NimBLEAddress addr = advertisedDevice->getAddress();
+    String macStr = addr.toString().c_str();
+    if (!parseMac6(macStr, mac)) 
+    {
+      return;
+    }
+    */
+
+    if (advertisedDevice->haveName())
+    {
+      std::string nimbleName = advertisedDevice->getName();
+      size_t nameInx = 0;
+      if (nimbleName.length() > 0)
+      {
+        memset(btDevice.ssid, 0, SSID_LEN + 1);
+
+        for (size_t ii = 0; ii < nimbleName.length() && ii < 31; ++ii)
+        {
+          uint8_t c = (uint8_t)nimbleName[ii];
+          if (isprint(c))
+          {
+            btDevice.ssid[nameInx++] = (char)c;
+          }
+        }
+
+        // all non-printable characters in BLE device name?
+        if (!strlen(btDevice.ssid))
+        {
+            strncpy(btDevice.ssid, "<UNKNOWN>", SSID_LEN);
+        }
+      }
+      else
+      {
+        strncpy(btDevice.ssid, "<UNKNOWN>", SSID_LEN);
+      }
+    }
+
+    strncpy(btDevice.mfg, advertisedDevice->toString().c_str(), 1000);
+
+    hasher.begin();
+    hasher.add((uint8_t*)&btDevice, sizeof(btDevice) - 1);
+    hasher.calculate();
+    hasher.getBytes(md5sum);
+
+    // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
+    uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | 
+                    ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
+    
+    // have we seen this one already?
+    cit = devices.find(key);
+    if (cit == devices.end())
+    {
+      // no?  then add it
+      devices[key] = btDevice;
+    }
+
+  }
+
+private:
+  found_ble_t btDevice;
+  std::vector<uint8_t> payload;
+  std::vecotr<uint8_t>::const_iterator citPayload;
+};
+
 
 
 bool SCANNER::begin()
@@ -226,43 +332,91 @@ bool SCANNER::begin()
   return (true);
 }
 
+
+void SCANNER::startBLE()
+{
+  if (btScanner)
+  {
+    Serial.printf(CLI_CYA "SCANNER::startBLE() - scanner was non-null\r\n" CLI_RESET);
+    this->stopBLE();
+    delay(100);
+  }
+
+  BLEDevice::init("");
+  btScanner = BLEDevice::getScan();
+  btScanner->setScanCallbacks(new btAdvertisedCBs(), true);
+  btScanner->setActiveScan(true);
+  btScanner->setInterval(100);
+  btScanner->setWindow(99);
+  btScanner->setDuplicateFilter(false);
+  btScanner->start(0, false);
+}
+
+
+void SCANNER::stopBLE()
+{
+  if (btScanner)
+  {
+    Serial.printf(CLI_CYA "SCANNER::stopBLE() - scanner was non-null\r\n" CLI_RESET);
+    btScanner->stop();
+    delay(200);
+    btScanner->clearResults();
+    NimBLEDevice::deinit(true);
+    btScanner = nullptr;
+  }
+}
+
 /*****************************************************
 * Do a single pass through all WiFi channels to see
 * what we can find out there.
 *****************************************************/
-void SCANNER::survey(uint32_t interval, const char* fname, bool doJson, const char* notes)
+void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fname, bool doJson, const char* notes)
 {
   uint32_t msnow = millis();
   devices.clear();
 
-  Serial.printf(CLI_CYA "Survey starting\r\n" CLI_RESET);
+  Serial.printf(CLI_CYA "Survey starting.\r\n" CLI_RESET);
   channelInx = 0;
-  scanning = true;
+  scanning = doWiFi;
 
-  esp_wifi_set_promiscuous(true);
-  Serial.printf(CLI_YEL "Setting channel %d" CLI_RESET, channels[channelInx]);
-  esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);    
-
-  while (scanning)
+  if (scanning)
   {
-    if ((millis() - msnow) > interval)
-    {
-      msnow = millis();
-      ++channelInx;
-      channelInx %= channelCount;
+    esp_wifi_set_promiscuous(true);
+    Serial.printf(CLI_YEL "Setting channel %d" CLI_RESET, channels[channelInx]);
+    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);    
 
-      if (!channelInx)
+    while (scanning)
+    {
+      Serial.printf(CLI_CYA "Starting WiFi.\r\n" CLI_RESET);
+
+      if ((millis() - msnow) > interval)
       {
-        scanning = false;
-        esp_wifi_set_promiscuous(false);
-        Serial.printf("\r\n");
-      }
-      else
-      {
-        Serial.printf(CLI_YEL "...%d" CLI_RESET, channels[channelInx]);
-        esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
+        msnow = millis();
+        ++channelInx;
+        channelInx %= channelCount;
+
+        if (!channelInx)
+        {
+          scanning = false;
+          esp_wifi_set_promiscuous(false);
+          Serial.printf(CLI_CYA "\r\nWiFi done.\r\n" CLI_RESET);
+        }
+        else
+        {
+          Serial.printf(CLI_YEL "...%d" CLI_RESET, channels[channelInx]);
+          esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
+        }
       }
     }
+  }
+
+  if (doBT)
+  {
+    Serial.printf(CLI_CYA "Starting BLE\r\n");
+    this->startBLE();
+    delay(interval * 5);
+    this->stopBLE();
+    Serial.printf(CLI_CYA "BLE Done, survey complete\r\n");
   }
 
   JsonDocument sur;
@@ -293,6 +447,7 @@ void SCANNER::survey(uint32_t interval, const char* fname, bool doJson, const ch
     dev["Channel"] = cit->second.channel;
     dev["SSID"] = cit->second.ssid;
     dev["RSSSI"] = cit->second.rssi;
+    dev["MfgData"] = cit->second.mfg;
 
     devs.add(dev);
   }
@@ -355,6 +510,11 @@ const char* mgmtSubtypeToText(uint8_t stype)
   }
 
   return ("");
+}
+
+const char* btleAdvertisedTypeToText(uint8_t type)
+{
+  return ("test");
 }
 
 const char* macToText(const uint8_t* mac)

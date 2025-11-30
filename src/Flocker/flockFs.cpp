@@ -1,5 +1,4 @@
 #include "flockFs.h"
-#include <esp_psram.h>
 
 #include "globals.h"
 

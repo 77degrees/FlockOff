@@ -93,6 +93,8 @@ void writeChar(EmbeddedCli *embeddedCli, char c)
 *
 * Parameters:
 *   -h - show help
+*   -b - do Bluetooth LE scan
+*   -w - do WiFi scan
 *   -i <interval> - how much time (in ms) to spend on
 *                   each WiFi channel and on BLE
 *   -f <filename> - save results to specified filename
@@ -104,6 +106,8 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
   bool paramErr = false;
   bool doFile = false;
   bool doJson = false;
+  bool doBT = false;
+  bool doWiFi = false;
   uint32_t interval = 1000; 
   char fname[64] = {0};
   char notes[128] = {0};
@@ -119,7 +123,15 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
       {
         if (argv[0] == '-')
         {
-          if (argv[1] == 'j')
+          if (argv[1] == 'b')
+          {
+            doBT = true;
+          }
+          else if (argv[1] == 'w')
+          {
+            doWiFi = true;
+          }
+          else if (argv[1] == 'j')
           {
             doJson = true;          
             ++ii;
@@ -202,7 +214,13 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
     return;
   }
 
-  flockScan.survey(interval, fname, doJson, notes);
+  if (!doBT && !doWiFi)
+  {
+    doBT = true;
+    doWiFi = true;
+  }
+
+  flockScan.survey(interval, doWiFi, doBT, fname, doJson, notes);
 }
 
 /******************************************************
@@ -428,16 +446,7 @@ void onReset(EmbeddedCli *cli, char *args, void *context)
   LittleFS.end();
   delay(1000);
 
-  esp_task_wdt_deinit();
-  esp_task_wdt_config_t wdt_config = {
-    .timeout_ms = 100,                 // Convertin ms
-    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,  // Bitmask of all cores, https://github.com/espressif/esp-idf/blob/v5.2.2/examples/system/task_watchdog/main/task_watchdog_example_main.c
-    .trigger_panic = true                             // Enable panic to restart ESP32
-  };
-  // WDT Init
-  esp_task_wdt_init(&wdt_config);
-  esp_task_wdt_add(NULL);  //add current thread to WDT watch
-  while (true);
+  ESP.restart();
 }
 
 /******************************************************

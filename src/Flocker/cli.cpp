@@ -1,6 +1,4 @@
 #include <Arduino.h>
-#include <esp_psram.h>
-#include "esp_task_wdt.h"
 #include <ctime>
 
 #include "cli.h"

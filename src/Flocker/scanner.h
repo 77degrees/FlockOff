@@ -8,9 +8,11 @@ public:
   ~SCANNER() {}
 
   bool begin();
-  void survey(uint32_t interval, const char* fname, bool doJson, const char* notes);
+  void survey(uint32_t interval, bool doWiFi, bool doBT, const char* fname, bool doJson, const char* notes);
 
 private:
+  void startBLE();
+  void stopBLE();
   
 };
 
