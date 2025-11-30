@@ -111,7 +111,7 @@ void NMEAGPS::parseSentence()
 
   if (once)
   {
-    if ((fixQuality > 0) && dataValid)
+    if ((fixQuality > 0) || dataValid)
     {
       if ((millis() - offset) > 750)
       {
