@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "gps.h"
+#include "led.h"
 
 #include "globals.h"
 
@@ -18,8 +19,6 @@ bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
 
   gpsPort.begin(baud, SWSERIAL_8N1, txPin, rxPin);
 
-  // GPIO1 for red, 2 for green, 3 for blue
-  leds.begin(1, 2, 3);
   lastMsgOffset = millis();
 
   return(gpsPort);
@@ -112,18 +111,20 @@ void NMEAGPS::parseSentence()
 
   if (once)
   {
-    if ((fixQuality > 0) || dataValid)
+    if ((fixQuality > 0) && dataValid)
     {
       if ((millis() - offset) > 750)
       {
         offset = millis();
-        leds.pulseGrn(2);
-        leds.stopBlu();
+        flockLED.pulseGrn(LEDS::LED_GPS, 10);
+        flockLED.stopBlu(LEDS::LED_GPS);
+        flockLED.stopRed(LEDS::LED_GPS);
       }
     }
-    else if (!leds.isBluActive())
+    else if (!flockLED.isBluActive(LEDS::LED_GPS))
     {
-      leds.cycleBlu(2600, 2);
+      flockLED.cycleBlu(LEDS::LED_GPS, 2500, 10);
+      flockLED.cycleRed(LEDS::LED_GPS, 2500, 10);
     }
   }
 }
@@ -158,7 +159,6 @@ void NMEAGPS::update()
       {
         lastMsgOffset = millis();
         this->parseSentence();
-        leds.pulseGrn(10);
       } // final newline
     } // parsing == true
   }  // char available
@@ -166,9 +166,7 @@ void NMEAGPS::update()
   if ((millis() - lastMsgOffset) > 10000)
   {
     lastMsgOffset = millis();
-    leds.pulseRed(3);
-    leds.stopBlu();
+    flockLED.pulseRed(LEDS::LED_GPS, 50);
+    flockLED.stopBlu(LEDS::LED_GPS);
   }
-
-  leds.update();
 }  // update()

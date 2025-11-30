@@ -3,7 +3,6 @@
 
 #include <SoftwareSerial.h>  // software uart for GPS plerup/espsoftwareserial
 #include "minmea.h"
-#include "led.h"
 
 class NMEAGPS {
 public:
@@ -23,7 +22,6 @@ public:
 
 private:
   EspSoftwareSerial::UART gpsPort;
-  LEDS leds;
 
   bool parsing;
   bool noSig;

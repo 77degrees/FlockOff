@@ -15,25 +15,22 @@
 #include "flockCfg.h"
 #include "scanner.h"
 
-#define GPS_PORT_TX 6
-#define GPS_PORT_RX 5
+#define GPS_PORT_TX 5
+#define GPS_PORT_RX 6
 #define GPS_PORT_BAUD 9600
 
+#define ADDR_LED_PIN 9
+
 #define USER_LED 21
-
-#define CLED_R 7
-#define CLED_G 9
-#define CLED_B 8
-
 // globals
 NMEAGPS gps;
 MBFS flockfs;
 CONFIG flockCfg;
 SCANNER flockScan;
+LEDS flockLED;
 bool psRamInitOk;
 bool initOk;
 
-static LEDS commLeds;
 
 void heapCheck() {
   if (!heap_caps_check_integrity_all(true)) {
@@ -52,9 +49,8 @@ void setup() {
   initOk &= flockfs.begin();
   initOk &= flockCfg.begin();
   initOk &= flockScan.begin();
+  initOk &= flockLED.begin(ADDR_LED_PIN, 140);
   initOk &= setupCLI();
-
-  commLeds.begin(CLED_R, CLED_G, CLED_B);
 
   if (!initOk)
   {
@@ -71,7 +67,7 @@ void loop() {
   if (initOk)
   {
     gps.update();
-    commLeds.update();
+    flockLED.update();
     updateCLI();
   }
 

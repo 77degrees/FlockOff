@@ -7,6 +7,7 @@
 #include "flockFs.h"
 #include "flockCfg.h"
 #include "scanner.h"
+#include "led.h"
 
 
 /**********************************
@@ -16,6 +17,7 @@ extern NMEAGPS gps;
 extern MBFS flockfs;
 extern CONFIG flockCfg;
 extern SCANNER flockScan;
+extern LEDS flockLED;
 extern bool psRamInitOk;
 extern bool initOk;
 

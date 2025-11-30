@@ -80,6 +80,7 @@ struct __attribute__((packed)) found_ble_t
   FLOCK_DISCOVERY_METHOD method;
   char name[SSID_LEN + 1];
   uint8_t addr[6];
+  char mfg[1001];
   int8_t rssi;
 };
 
@@ -116,7 +117,7 @@ static MD5Builder hasher;
 static NimBLEScan* btScanner = nullptr;
 static uint8_t md5sum[16];
 static std::map<uint32_t, found_wifi_t> wifiDevices;
-static std::map<uint32_t, found_wifi_t>::const_iterator citWifiDevices
+static std::map<uint32_t, found_wifi_t>::const_iterator citWifiDevices;
 static std::map<uint32_t, found_ble_t> bleDevices;
 static std::map<uint32_t, found_ble_t>::const_iterator citBleDevices;
 
@@ -212,6 +213,7 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
       {
         // no?  then add it
         wifiDevices[key] = wifi;
+        //flockLED.pulseRed(LEDS::LED_COMMS, 10);
       }
     } // this element is an SSID
   } // This is an element
@@ -225,7 +227,7 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
     btDevice.method = BTLE_DISCOVERY;
     btDevice.rssi = advertisedDevice->getRSSI();
 
-    payload = advertisedDevice.getPayload();
+    payload = advertisedDevice->getPayload();
     citPayload = payload.begin();
     if (citPayload == payload.end())
     {
@@ -256,26 +258,26 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
       size_t nameInx = 0;
       if (nimbleName.length() > 0)
       {
-        memset(btDevice.ssid, 0, SSID_LEN + 1);
+        memset(btDevice.name, 0, SSID_LEN + 1);
 
         for (size_t ii = 0; ii < nimbleName.length() && ii < 31; ++ii)
         {
           uint8_t c = (uint8_t)nimbleName[ii];
           if (isprint(c))
           {
-            btDevice.ssid[nameInx++] = (char)c;
+            btDevice.name[nameInx++] = (char)c;
           }
         }
 
         // all non-printable characters in BLE device name?
-        if (!strlen(btDevice.ssid))
+        if (!strlen(btDevice.name))
         {
-            strncpy(btDevice.ssid, "<UNKNOWN>", SSID_LEN);
+            strncpy(btDevice.name, "<UNKNOWN>", SSID_LEN);
         }
       }
       else
       {
-        strncpy(btDevice.ssid, "<UNKNOWN>", SSID_LEN);
+        strncpy(btDevice.name, "<UNKNOWN>", SSID_LEN);
       }
     }
 
@@ -291,11 +293,11 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
                     ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
     
     // have we seen this one already?
-    cit = devices.find(key);
-    if (cit == devices.end())
+    citBleDevices = bleDevices.find(key);
+    if (citBleDevices == bleDevices.end())
     {
       // no?  then add it
-      devices[key] = btDevice;
+      bleDevices[key] = btDevice;
     }
 
   }
@@ -303,7 +305,7 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
 private:
   found_ble_t btDevice;
   std::vector<uint8_t> payload;
-  std::vecotr<uint8_t>::const_iterator citPayload;
+  std::vector<uint8_t>::const_iterator citPayload;
 };
 
 
@@ -373,22 +375,25 @@ void SCANNER::stopBLE()
 void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fname, bool doJson, const char* notes)
 {
   uint32_t msnow = millis();
-  devices.clear();
+  bleDevices.clear();
+  wifiDevices.clear();
+
+  flockLED.alertBlu(LEDS::LED_COMMS);
+  flockLED.alertGrn(LEDS::LED_COMMS);
 
   Serial.printf(CLI_CYA "Survey starting.\r\n" CLI_RESET);
   channelInx = 0;
   scanning = doWiFi;
 
   if (scanning)
-  {
+  { 
+    Serial.printf(CLI_CYA "Starting WiFi.\r\n" CLI_RESET);
     esp_wifi_set_promiscuous(true);
     Serial.printf(CLI_YEL "Setting channel %d" CLI_RESET, channels[channelInx]);
-    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);    
+    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);   
 
     while (scanning)
     {
-      Serial.printf(CLI_CYA "Starting WiFi.\r\n" CLI_RESET);
-
       if ((millis() - msnow) > interval)
       {
         msnow = millis();
@@ -407,6 +412,8 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
           esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
         }
       }
+
+      flockLED.update();
     }
   }
 
@@ -438,21 +445,21 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
   JsonArray devs = sur["Devices"].to<JsonArray>();
   JsonDocument dev;
 
-  for (cit = devices.begin(); cit != devices.end(); ++cit)
+  for (citWifiDevices = wifiDevices.begin(); citWifiDevices != wifiDevices.end(); ++citWifiDevices)
   {
     dev.clear();
-    dev["Method"] = discoveryToText(cit->second.method);
-    dev["Subtype"] = mgmtSubtypeToText(cit->second.subtype);
-    dev["BSSID"] = macToText(cit->second.mac);
-    dev["Channel"] = cit->second.channel;
-    dev["SSID"] = cit->second.ssid;
-    dev["RSSSI"] = cit->second.rssi;
-    dev["MfgData"] = cit->second.mfg;
+    dev["Method"] = discoveryToText(citWifiDevices->second.method);
+    dev["Subtype"] = mgmtSubtypeToText(citWifiDevices->second.subtype);
+    dev["BSSID"] = macToText(citWifiDevices->second.mac);
+    dev["Channel"] = citWifiDevices->second.channel;
+    dev["SSID"] = citWifiDevices->second.ssid;
+    dev["RSSSI"] = citWifiDevices->second.rssi;
+    //dev["MfgData"] = citWifiDevices->second.mfg;
 
     devs.add(dev);
   }
 
-  Serial.printf(CLI_CYA "Found " CLI_GRN "%d" CLI_CYA " devices:\r\n" CLI_RESET, devices.size());
+  Serial.printf(CLI_CYA "Found " CLI_GRN "%d" CLI_CYA " devices:\r\n" CLI_RESET, wifiDevices.size());
   serializeJsonPretty(sur, Serial);
   Serial.printf("\r\n");
 
@@ -475,6 +482,9 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
 
     free (output);
   }
+
+  flockLED.stopBlu(LEDS::LED_COMMS);
+  flockLED.stopGrn(LEDS::LED_COMMS);
 }
 
 const char* discoveryToText(FLOCK_DISCOVERY_METHOD meth)

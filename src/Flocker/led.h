@@ -20,6 +20,12 @@
 class LEDS
 {
 public:
+  enum LED_id_t
+  {
+    LED_GPS,
+    LED_COMMS
+  };
+
   enum LED_color_t
   {
     CLR_RED = 0,
@@ -31,36 +37,41 @@ public:
   LEDS() {}
   ~LEDS() {}
 
-  void begin(uint8_t pin_r, uint8_t pin_g, uint8_t pin_b);
+  bool begin(uint8_t pin, uint8_t bright);
   void update();
 
-  void cycleRed(uint32_t base, uint32_t on);
-  void cycleBlu(uint32_t base, uint32_t on);
-  void cycleGrn(uint32_t base, uint32_t on);
-  void cycle(LEDS::LED_color_t c, uint32_t base, uint32_t on);
+  void cycleRed(LED_id_t id, uint32_t base, uint32_t on);
+  void cycleBlu(LED_id_t id, uint32_t base, uint32_t on);
+  void cycleGrn(LED_id_t id, uint32_t base, uint32_t on);
+  void cycle(LED_id_t id, LEDS::LED_color_t c, uint32_t base, uint32_t on);
 
+  void stopRed(LED_id_t id);
+  void stopGrn(LED_id_t id);
+  void stopBlu(LED_id_t id);
+  void stop(LED_id_t id, LEDS::LED_color_t c);
 
-  void stopRed();
-  void stopGrn();
-  void stopBlu();
-  void stop(LEDS::LED_color_t c);
+  void pulseRed(LED_id_t id, uint32_t duration);
+  void pulseGrn(LED_id_t id, uint32_t duration);
+  void pulseBlu(LED_id_t id, uint32_t duration);
+  void pulse(LED_id_t id, LEDS::LED_color_t c, uint32_t duration);
 
-  void pulseRed(uint32_t duration);
-  void pulseGrn(uint32_t duration);
-  void pulseBlu(uint32_t duration);
-  void pulse(LEDS::LED_color_t c, uint32_t duration);
+  // do the "alert" pulse
+  void alertRed(LED_id_t id);
+  void alertGrn(LED_id_t id);
+  void alertBlu(LED_id_t id);
+  void alert(LED_id_t id, LEDS::LED_color_t c);
 
   // Is the LED is actually lit?
-  bool isRedOn();
-  bool isGrnOn();
-  bool isBluOn();
-  bool isLEDOn(LEDS::LED_color_t);
+  bool isRedOn(LED_id_t id);
+  bool isGrnOn(LED_id_t id);
+  bool isBluOn(LED_id_t id);
+  bool isLEDOn(LED_id_t id, LEDS::LED_color_t);
 
   // Is the LED active? (e.g., cycling, but not necessarily lit)
-  bool isRedActive()                    { return(isLEDActive(LEDS::CLR_RED)); }
-  bool isGrnActive()                    { return(isLEDActive(LEDS::CLR_GRN)); }
-  bool isBluActive()                    { return(isLEDActive(LEDS::CLR_BLU)); }
-  bool isLEDActive(LEDS::LED_color_t c) { return(leds[c].mode != LED_MODE_OFF); }
+  bool isRedActive(LED_id_t id)                      { return(isLEDActive(id, LEDS::CLR_RED)); }
+  bool isGrnActive(LED_id_t id)                      { return(isLEDActive(id, LEDS::CLR_GRN)); }
+  bool isBluActive(LED_id_t id)                      { return(isLEDActive(id, LEDS::CLR_BLU)); }
+  bool isLEDActive(LED_id_t id, LEDS::LED_color_t c) { return(leds[id][c].mode != LED_MODE_OFF); }
 
 private:
 
@@ -68,21 +79,24 @@ private:
   {
     LED_MODE_OFF = 0,
     LED_MODE_PULSE,
+    LED_MODE_ALERT,
     LED_MODE_CYCLE_ON,
     LED_MODE_CYCLE_OFF
   };
 
   struct led
   {
-    uint8_t pin;
+    uint8_t level;
     LEDS::LED_mode_t mode;
     uint32_t pulseTime;
+    uint8_t alertTime;
     uint32_t offset;
     uint32_t cycleTime;
     uint32_t cycleOnTime;
   };
 
-  struct led leds[CLR_MAX];
+  struct led leds[2][CLR_MAX];
+  uint8_t maxBright;
 
 };
 

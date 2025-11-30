@@ -1,34 +1,49 @@
-#include "Arduino.h"
+#include <LiteLED.h>
+
 #include "led.h"
 
-#define LED_ON(x)    { pinMode(x, OUTPUT); digitalWrite(x, HIGH); }
-#define LED_OFF(x)   { pinMode(x, OUTPUT); digitalWrite(x, LOW); }
-#define IS_LED_ON(x) { digitalRead(x); }
+static const crgb_t L_RED = 0xff0000;
+static const crgb_t L_GREEN = 0x00ff00;
+static const crgb_t L_BLUE = 0x0000ff;
+static const crgb_t L_WHITE = 0xe0e0e0;
+
+static LiteLED aLEDS(LED_STRIP_WS2812_RGB, 0);
+
 /*******************************************
 * begin()
 ********************************************
 * set up this LED's pins, set mode to off
 * for each LED color
 *******************************************/
-void LEDS::begin(uint8_t pin_r, uint8_t pin_g, uint8_t pin_b)
+bool LEDS::begin(uint8_t pin, uint8_t bright)
 {
-  leds[LEDS::CLR_RED].pin = pin_r;
-  leds[LEDS::CLR_GRN].pin = pin_g;
-  leds[LEDS::CLR_BLU].pin = pin_b;
+  maxBright = bright;
 
-  leds[LEDS::CLR_RED].mode = LEDS::LED_MODE_OFF;
-  leds[LEDS::CLR_GRN].mode = LEDS::LED_MODE_OFF;
-  leds[LEDS::CLR_BLU].mode = LEDS::LED_MODE_OFF;
+  esp_err_t ledRet = aLEDS.begin(pin, 2);
+  aLEDS.fill(0, 1);
 
-  for (uint8_t ii = 0; ii < LEDS::CLR_MAX; ++ii)
+  leds[LEDS::LED_GPS][LEDS::CLR_RED].mode = LEDS::LED_MODE_OFF;
+  leds[LEDS::LED_GPS][LEDS::CLR_GRN].mode = LEDS::LED_MODE_OFF;
+  leds[LEDS::LED_GPS][LEDS::CLR_BLU].mode = LEDS::LED_MODE_OFF;
+
+  leds[LEDS::LED_COMMS][LEDS::CLR_RED].mode = LEDS::LED_MODE_OFF;
+  leds[LEDS::LED_COMMS][LEDS::CLR_GRN].mode = LEDS::LED_MODE_OFF;
+  leds[LEDS::LED_COMMS][LEDS::CLR_BLU].mode = LEDS::LED_MODE_OFF;
+
+  for (uint8_t id = 0; id < 2; ++id)
   {
-    leds[ii].cycleOnTime =
-    leds[ii].cycleTime =
-    leds[ii].pulseTime = 0;
-    leds[ii].offset = millis();
-
-    LED_OFF(leds[ii].pin);
+    for (uint8_t ii = 0; ii < LEDS::CLR_MAX; ++ii)
+    {
+      leds[id][ii].level =
+      leds[id][ii].cycleOnTime =
+      leds[id][ii].cycleTime =
+      leds[id][ii].alertTime =
+      leds[id][ii].pulseTime = 0;
+      leds[id][ii].offset = millis();
+    }
   }
+
+  return (ledRet == ESP_OK);
 }
 
 /*******************************************
@@ -40,49 +55,79 @@ void LEDS::begin(uint8_t pin_r, uint8_t pin_g, uint8_t pin_b)
 *******************************************/
 void LEDS::update()
 {
-  for (uint8_t ii = 0; ii < LEDS::CLR_MAX; ++ii)
+  for (uint8_t id = 0; id < 2; ++id)
   {
-    led* thisLED = &leds[ii];  // get a pointer for simplicity 
-    uint32_t elapsed = millis() - thisLED->offset;
-
-    switch (thisLED->mode)
+    for (uint8_t ii = 0; ii < LEDS::CLR_MAX; ++ii)
     {
-      case LEDS::LED_MODE_PULSE:
-      {
-        if (elapsed >= thisLED->pulseTime)
-        {
-          LED_OFF(thisLED->pin);
-          thisLED->mode = LEDS::LED_MODE_OFF;
-        }
-      }  break;
+      led* thisLED = &leds[id][ii];  // get a pointer for simplicity 
+      uint32_t elapsed = millis() - thisLED->offset;
 
-      case LEDS::LED_MODE_CYCLE_OFF:
+      switch (thisLED->mode)
       {
-        if (elapsed >= thisLED->cycleTime)
+        case LEDS::LED_MODE_PULSE:
         {
-          LED_ON(thisLED->pin);
-          thisLED->mode = LED_MODE_CYCLE_ON;
-          thisLED->offset = millis();
-        }
-      }  break;
+          if (elapsed >= thisLED->pulseTime)
+          {
+            thisLED->level = 0;
+            thisLED->mode = LEDS::LED_MODE_OFF;
+          }
+        }  break;
 
-      case LEDS::LED_MODE_CYCLE_ON:
-      {
-        if (elapsed >= thisLED->cycleOnTime)
+        case LEDS::LED_MODE_ALERT:
         {
-          LED_OFF(thisLED->pin);
-          thisLED->mode = LED_MODE_CYCLE_OFF;
-          thisLED->offset = millis();
-        }
-      }  break;
+          if (elapsed >= 2)
+          {
+            --thisLED->level;
+            thisLED->offset = millis();
+          }
+        }  break;
 
-      case LEDS::LED_MODE_OFF:
-      default:
-      {
-        // nothing to see here, move along
+        case LEDS::LED_MODE_CYCLE_OFF:
+        {
+          if (elapsed >= thisLED->cycleTime)
+          {
+            thisLED->level = maxBright;
+            thisLED->mode = LED_MODE_CYCLE_ON;
+            thisLED->offset = millis();
+          }
+        }  break;
+
+        case LEDS::LED_MODE_CYCLE_ON:
+        {
+          if (elapsed >= thisLED->cycleOnTime)
+          {
+            thisLED->level = 0;
+            thisLED->mode = LED_MODE_CYCLE_OFF;
+            thisLED->offset = millis();
+          }
+        }  break;
+
+        case LEDS::LED_MODE_OFF:
+        {
+          thisLED->level = 0;
+        }  break;
+
+        default:
+        {
+          // nothing to see here, move along
+        }
       }
     }
   }
+
+  crgb_t val = 0;
+  val =  (((uint32_t)leds[LED_GPS][CLR_RED].level << 16) & 0x00ff0000);
+  val |= (((uint32_t)leds[LED_GPS][CLR_GRN].level <<  8) & 0x0000ff00);
+  val |= (((uint32_t)leds[LED_GPS][CLR_BLU].level      ) & 0x000000ff); 
+  aLEDS.setPixel(LED_GPS, val);
+
+  val = 0;
+  val =  (((uint32_t)leds[LED_COMMS][CLR_RED].level << 16) & 0x00ff0000);
+  val |= (((uint32_t)leds[LED_COMMS][CLR_GRN].level <<  8) & 0x0000ff00);
+  val |= (((uint32_t)leds[LED_COMMS][CLR_BLU].level      ) & 0x000000ff); 
+  aLEDS.setPixel(LED_COMMS, val);
+
+  aLEDS.show();
 }
 
 /*******************************************
@@ -92,16 +137,16 @@ void LEDS::update()
 * given cycle time and on time (for variable
 * duty cycle
 *******************************************/
-void LEDS::cycleRed(uint32_t base, uint32_t on)  { this->cycle(LEDS::CLR_RED, base, on); }
-void LEDS::cycleGrn(uint32_t base, uint32_t on)  { this->cycle(LEDS::CLR_GRN, base, on); }
-void LEDS::cycleBlu(uint32_t base, uint32_t on)  { this->cycle(LEDS::CLR_BLU, base, on); }
-void LEDS::cycle(LEDS::LED_color_t c, uint32_t base, uint32_t on)
+void LEDS::cycleRed(LED_id_t id, uint32_t base, uint32_t on)  { this->cycle(id, LEDS::CLR_RED, base, on); }
+void LEDS::cycleGrn(LED_id_t id, uint32_t base, uint32_t on)  { this->cycle(id, LEDS::CLR_GRN, base, on); }
+void LEDS::cycleBlu(LED_id_t id, uint32_t base, uint32_t on)  { this->cycle(id, LEDS::CLR_BLU, base, on); }
+void LEDS::cycle(LED_id_t id, LEDS::LED_color_t c, uint32_t base, uint32_t on)
 {
-  leds[c].cycleTime = base;
-  leds[c].cycleOnTime = on;
-  leds[c].offset = millis();
-  leds[c].mode = LEDS::LED_MODE_CYCLE_ON;
-  LED_ON(leds[c].pin);
+  leds[id][c].cycleTime = base;
+  leds[id][c].cycleOnTime = on;
+  leds[id][c].offset = millis();
+  leds[id][c].mode = LEDS::LED_MODE_CYCLE_ON;
+  leds[id][c].level = maxBright;
 }
 
 /*******************************************
@@ -111,13 +156,13 @@ void LEDS::cycle(LEDS::LED_color_t c, uint32_t base, uint32_t on)
 * both cycling (flashing) as well as single
 * shot pulse
 *******************************************/
-void LEDS::stopRed()  { this->stop(LEDS::CLR_RED); }
-void LEDS::stopGrn()  { this->stop(LEDS::CLR_GRN); }
-void LEDS::stopBlu()  { this->stop(LEDS::CLR_BLU); }
-void LEDS::stop(LEDS::LED_color_t c)
+void LEDS::stopRed(LED_id_t id)  { this->stop(id, LEDS::CLR_RED); }
+void LEDS::stopGrn(LED_id_t id)  { this->stop(id, LEDS::CLR_GRN); }
+void LEDS::stopBlu(LED_id_t id)  { this->stop(id, LEDS::CLR_BLU); }
+void LEDS::stop(LED_id_t id, LEDS::LED_color_t c)
 {
-  leds[c].mode = LEDS::LED_MODE_OFF;
-  LED_OFF(leds[c].pin);
+  leds[id][c].mode = LEDS::LED_MODE_OFF;
+  leds[id][c].level = 0;
 }
 
 /*******************************************
@@ -126,26 +171,39 @@ void LEDS::stop(LEDS::LED_color_t c)
 * pulse (single shot) an LED for the specified
 * time
 *******************************************/
-void LEDS::pulseRed(uint32_t duration)  { this->pulse(LEDS::CLR_RED, duration); }
-void LEDS::pulseGrn(uint32_t duration)  { this->pulse(LEDS::CLR_GRN, duration); }
-void LEDS::pulseBlu(uint32_t duration)  { this->pulse(LEDS::CLR_BLU, duration); }
-void LEDS::pulse(LEDS::LED_color_t c, uint32_t duration)
+void LEDS::pulseRed(LED_id_t id, uint32_t duration)  { this->pulse(id, LEDS::CLR_RED, duration); }
+void LEDS::pulseGrn(LED_id_t id, uint32_t duration)  { this->pulse(id, LEDS::CLR_GRN, duration); }
+void LEDS::pulseBlu(LED_id_t id, uint32_t duration)  { this->pulse(id, LEDS::CLR_BLU, duration); }
+void LEDS::pulse(LED_id_t id, LEDS::LED_color_t c, uint32_t duration)
 {
-  leds[c].offset = millis();
-  leds[c].pulseTime = duration;
-  leds[c].mode = LEDS::LED_MODE_PULSE;
-  LED_ON(leds[c].pin);
+  leds[id][c].offset = millis();
+  leds[id][c].pulseTime = duration;
+  leds[id][c].mode = LEDS::LED_MODE_PULSE;
+  leds[id][c].level = maxBright;
 }
+
+
+
+void LEDS::alertRed(LED_id_t id)  { this->alert(id, LEDS::CLR_RED); }
+void LEDS::alertGrn(LED_id_t id)  { this->alert(id, LEDS::CLR_GRN); }
+void LEDS::alertBlu(LED_id_t id)  { this->alert(id, LEDS::CLR_BLU); }
+void LEDS::alert(LED_id_t id, LEDS::LED_color_t c)
+{
+  leds[id][c].mode = LEDS::LED_MODE_ALERT;
+  leds[id][c].level = maxBright;
+}
+
+
 
 /*******************************************
 * isXXXOn()
 ********************************************
 * Returns true if LED is on (actually lit)
 *******************************************/
-bool LEDS::isRedOn()  { return (isLEDOn(LEDS::CLR_RED)); }
-bool LEDS::isGrnOn()  { return (isLEDOn(LEDS::CLR_GRN)); }
-bool LEDS::isBluOn()  { return (isLEDOn(LEDS::CLR_BLU)); }
-bool LEDS::isLEDOn(LEDS::LED_color_t c)
+bool LEDS::isRedOn(LED_id_t id)  { return (isLEDOn(id, LEDS::CLR_RED)); }
+bool LEDS::isGrnOn(LED_id_t id)  { return (isLEDOn(id, LEDS::CLR_GRN)); }
+bool LEDS::isBluOn(LED_id_t id)  { return (isLEDOn(id, LEDS::CLR_BLU)); }
+bool LEDS::isLEDOn(LED_id_t id, LEDS::LED_color_t c)
 {
-  return (bool)(IS_LED_ON(leds[c].pin));
+  return (leds[id][c].level != 0);
 }
