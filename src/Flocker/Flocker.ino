@@ -15,13 +15,13 @@
 #include "flockCfg.h"
 #include "scanner.h"
 
+// constants for config'ing objects
 #define GPS_PORT_TX 5
 #define GPS_PORT_RX 6
 #define GPS_PORT_BAUD 9600
-
 #define ADDR_LED_PIN 9
-
 #define USER_LED 21
+
 // globals
 NMEAGPS gps;
 MBFS flockfs;
@@ -31,6 +31,7 @@ LEDS flockLED;
 bool psRamInitOk;
 bool initOk;
 
+static uint8_t cfgListenerID = BAD_LISTENER_ID;
 
 void heapCheck() {
   if (!heap_caps_check_integrity_all(true)) {
@@ -57,6 +58,10 @@ void setup() {
     delay(2000);
     Serial.printf("SOMETHNG DIDN'T INIT.  Fuck :/\r\n");
     delay(2000);
+  }
+  else
+  {
+    flockCfg.registerListener(cfgListenerID);
   }
 }
 

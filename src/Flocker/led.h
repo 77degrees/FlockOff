@@ -97,7 +97,7 @@ private:
 
   struct led leds[2][CLR_MAX];
   uint8_t maxBright;
-
+  uint8_t cfgListenerID;
 };
 
 #endif // LED_H_

@@ -3,6 +3,10 @@
 
 #include <ArduinoJson.h>
 
+#define MAX_LISTENERS 10
+#define BAD_LISTENER_ID 255
+#define INPUT_STR_LEN 80
+
 class CONFIG
 {
 public:
@@ -12,14 +16,35 @@ public:
   bool begin();
   bool buildDefualtConfig();
   void outputJson();
-  void selectTimeZone();
+  void setConfigValues();
   void setTimeZone();
   const char* getTimeZone();
-  //const char** getWiFiAPs();
+  const char* getDeviceName();
+  uint8_t getLEDBrightness();
+  bool getDebugEnabledState();
+  uint8_t getDebugFileCount();
+
+  bool newCfgAvailable(uint8_t listenerID);
+  bool registerListener(uint8_t& id);
 
 private:
+  void setLEDBrightness();
+  void selectTimeZone();
+  void setDeviceName();
+  void setDebugEnabledState();
+  void setDebugFileRollCount();
   bool writeConfig();
+  void setNewConfigFlags(bool val);
+
+  int readInt(const char* prompt);
+  char readChar(const char* prompt);
+  const char* readString(const char* prompt);
+
+  bool hasNewConfig[MAX_LISTENERS];
+  uint8_t nextListenerID;
   JsonDocument cfg;
+
+  char inputstr[INPUT_STR_LEN + 1];
 
 };
 

@@ -15,6 +15,16 @@ void writeChar(EmbeddedCli *embeddedCli, char c);
 ********************************************************/
 // perform a manual device wireless survey
 void onSurvey(EmbeddedCli* cli, char* args, void* context);
+const char* helpSurvey = "survey [OPTION]\r\n"
+                         "Perform a WiFi and/or Bluetooth survey.  Displays all results, not just those that match scan criteria.\r\n\r\n"
+                         "  -i <INTERVAL>   interval in milliseconds to scan each WiFi channel\r\n"
+                         "  -w              scan WiFi for broadcasters\r\n"
+                         "  -b              scan for Bluetooth broadcasters\r\n"
+                         "  -f <FILENAME>   save results to FILENAME\r\n"
+                         "  -j <NOTES>      save results as JSON, with NOTES added for reference\r\n\r\n"
+                         "If neither the -b or -w parameter is set, a survey of both will be performed.  If data is saved to file, but the -j parameter is not supplied, the data will be in CSV format.\r\n\r\n";
+
+
 // clear terminal
 void onClear(EmbeddedCli* cli, char* args, void* context);
 // reset device (close filesystem first)
@@ -29,10 +39,12 @@ void onCat(EmbeddedCli* cli, char* args, void* context);
 void onWrite(EmbeddedCli* cli, char* args, void* context);
 // get system status
 void onStatus(EmbeddedCli* cli, char* args, void* context);
-// config timezone
-void onTimeZone(EmbeddedCli* cli, char* args, void* context);
-
-
+// interactive config stuff
+void onConfig(EmbeddedCli* cli, char* args, void* context);
+const char* helpConfig = "config [OPTION]\r\n"
+                         "Set or display configuration parameters\r\n\r\n"
+                         "  -l      display current configuration (dumps the raw JSON in pretty-print format)\r\n\r\n"
+                         "If -l not given, show system configuration menu.";
 
 /*******************************************************
 * Binding struct for each command:
@@ -46,7 +58,7 @@ void onTimeZone(EmbeddedCli* cli, char* args, void* context);
   };
 *******************************************************/
 const struct CliCommandBinding bindings[] = {
-  {"survey", "Perform Wifi survey", "survey [-i <interval_in_ms>] [-f <filename>] [-j]", true, nullptr, onSurvey},
+  {"survey", "Perform Wifi survey", helpSurvey, true, nullptr, onSurvey},
   {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
   {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
   {"ls", "List files", "List files in filesystem", false, nullptr, onLs},
@@ -56,7 +68,7 @@ const struct CliCommandBinding bindings[] = {
   {"cp", "Copy file", "<source filename> <destination filename>", true, nullptr, onCp},
   {"cat", "Cat file", "<filename> file to read", true, nullptr,  onCat},
   {"status", "Get system status", "Get system status", false, nullptr, onStatus},
-  {"timezone", "Set time zone", "Set time zone, updates config structs", false, nullptr, onTimeZone}};
+  {"config", "Get/Set config values", helpConfig, true, nullptr, onConfig}};
 
 const size_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
 
@@ -81,6 +93,22 @@ void onCommand(EmbeddedCli *embeddedCli, CliCommand *command)
 void writeChar(EmbeddedCli *embeddedCli, char c)
 {
   Serial.write(c);
+}
+
+void onConfig(EmbeddedCli* cli, char* args, void* context)
+{
+  if (embeddedCliGetTokenCount(args) == 1)
+  {
+    const char* cmd = embeddedCliGetToken(args, 1);
+    if (!strcmp("-l", cmd))
+    {
+      flockCfg.outputJson();
+    }
+  }
+  else
+  {
+    flockCfg.setConfigValues();
+  }
 }
 
 /******************************************************
@@ -474,7 +502,9 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
     
     Serial.printf(CLI_YEL "\tGPS current time/date (gmt) is " CLI_BOLD_GRN "%02d:%02d:%02d %d/%d/%d\r\n" CLI_RESET, 
               tm_.tm_hour, tm_.tm_min, tm_.tm_sec,
-              tm_.tm_mon, tm_.tm_mday, tm_.tm_year + 1900);  
+              tm_.tm_mon, tm_.tm_mday, tm_.tm_year + 1900);
+    
+    Serial.printf(CLI_YEL "\tNumber of satellites currently tracked: " CLI_BOLD_GRN "%d\r\n" CLI_RESET, gps.getSatelliteCount());
   }
   else
   {
@@ -509,19 +539,5 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
   Serial.printf(CLI_YEL "\tTimezone is set to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, flockCfg.getTimeZone());  
 }
 
-/******************************************************
-* onTimeZone()
-*******************************************************
-* Command to configure timezone.  This leads to an 
-* interactive menu thing to select the timezone
-*
-* Parameters:
-*   None
-*
-******************************************************/
-void onTimeZone(EmbeddedCli* cli, char* args, void* context)
-{
-  flockCfg.selectTimeZone();
-}
 
 #endif // CLI_IMPL_H_

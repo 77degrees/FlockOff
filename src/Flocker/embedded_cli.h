@@ -1259,7 +1259,6 @@ extern "C" {
 
   static void printBindingHelp(EmbeddedCli *cli, CliCommandBinding *binding) {
     if (binding->help != NULL) {
-      cli->writeChar(cli, '\t');
       writeToOutput(cli, binding->help);
       writeToOutput(cli, lineBreak);
     }
@@ -1311,10 +1310,7 @@ extern "C" {
         }
       }
       if (found && helpStr != NULL) {
-        writeToOutput(cli, " * ");
-        writeToOutput(cli, cmdName);
-        writeToOutput(cli, lineBreak);
-        cli->writeChar(cli, '\t');
+        writeToOutput(cli, "Usage: ");
         writeToOutput(cli, helpStr);
         writeToOutput(cli, lineBreak);
       } else if (found) {

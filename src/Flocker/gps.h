@@ -12,11 +12,12 @@ public:
   bool begin(uint32_t baud, int8_t rxPin, int8_t txPin);
   void update();
 
-  int getFixQuality()  { return (fixQuality); }
-  float getCourse()    { return (course); }
-  float getLatitude()  { return (latitude); }
-  float getLongitude() { return (longitude); }
-  float getSpeed()     { return (speed); }
+  int getFixQuality()       { return (fixQuality); }
+  int getSatelliteCount()   { return (satelliteCount); }
+  float getCourse()         { return (course); }
+  float getLatitude()       { return (latitude); }
+  float getLongitude()      { return (longitude); }
+  float getSpeed()          { return (speed); }
 
   void getTime(struct tm* tm)  { memcpy(tm, &localtm, sizeof(struct tm)); }
 
@@ -31,6 +32,7 @@ private:
 
   bool dataValid;
   int fixQuality;
+  int satelliteCount;
 
   float course;
   float longitude;

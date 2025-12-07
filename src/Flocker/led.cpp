@@ -1,6 +1,8 @@
 #include <LiteLED.h>
 
 #include "led.h"
+#include "flockCfg.h"
+#include "globals.h"
 
 static const crgb_t L_RED = 0xff0000;
 static const crgb_t L_GREEN = 0x00ff00;
@@ -43,6 +45,11 @@ bool LEDS::begin(uint8_t pin, uint8_t bright)
     }
   }
 
+  if (flockCfg.registerListener(cfgListenerID))
+  {
+    maxBright = flockCfg.getLEDBrightness();
+  }
+
   return (ledRet == ESP_OK);
 }
 
@@ -55,6 +62,8 @@ bool LEDS::begin(uint8_t pin, uint8_t bright)
 *******************************************/
 void LEDS::update()
 {
+  static uint32_t cfgWatch = millis();
+
   for (uint8_t id = 0; id < 2; ++id)
   {
     for (uint8_t ii = 0; ii < LEDS::CLR_MAX; ++ii)
@@ -79,6 +88,11 @@ void LEDS::update()
           {
             --thisLED->level;
             thisLED->offset = millis();
+
+            if (thisLED->level == 0)
+            {
+              thisLED->level = maxBright;
+            }
           }
         }  break;
 
@@ -111,6 +125,16 @@ void LEDS::update()
         {
           // nothing to see here, move along
         }
+      }
+    }
+
+    if ((millis() - cfgWatch >= 100))
+    {
+      cfgWatch = millis();
+
+      if (flockCfg.newCfgAvailable(cfgListenerID))
+      {
+        maxBright = flockCfg.getLEDBrightness();
       }
     }
   }

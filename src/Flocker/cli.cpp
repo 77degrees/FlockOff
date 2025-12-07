@@ -2,6 +2,7 @@
 #include <ctime>
 
 #include "cli.h"
+#include "flockCfg.h"
 
 #include "globals.h"
 
@@ -26,7 +27,7 @@ bool setupCLI()
   config->cmdBufferSize = CLI_CMD_BUFFER_SIZE_PS;
   config->historyBufferSize = CLI_HISTORY_SIZE_PS;
   config->maxBindingCount = CLI_BINDING_COUNT_PS;
-  config->invitation = "Flock Off $> ";
+  config->invitation = CLI_BOLD_PUR "Flock Off" CLI_RESET " $>";
   cli = embeddedCliNew(config, true);
 
   if (!cli)

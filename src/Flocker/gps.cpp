@@ -11,6 +11,7 @@ bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
 
   dataValid = false;
   fixQuality = 0;
+  satelliteCount = 0;
 
   course = 0.0;
   latitude = 0.0;
@@ -72,6 +73,7 @@ void NMEAGPS::parseSentence()
       if (minmea_parse_gga(&frame, sentence)) 
       {
         this->fixQuality = frame.fix_quality;
+        this->satelliteCount = frame.satellites_tracked;
         once = true;
       }
       else
