@@ -82,6 +82,8 @@ void onCommand(EmbeddedCli *embeddedCli, CliCommand *command)
 {
   Serial.printf("%sCommand not found: '%s'%s.  Use 'help' for command list.\r\n",
       CLI_BOLD_RED, command->name, CLI_RESET);
+
+  flockLog.addLogLine("CLI", "Unknown command >%s<\r\n", command->name);
 }
 
 /******************************************************
@@ -248,6 +250,7 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
     doWiFi = true;
   }
 
+  flockLog.addLogLine("CLI", "Survey\r\n");
   flockScan.survey(interval, doWiFi, doBT, fname, doJson, notes);
 }
 
@@ -263,7 +266,8 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
 ******************************************************/
 void onClear(EmbeddedCli *cli, char *args, void *context)
 {
-    Serial.printf(CLI_CLEAR);
+  flockLog.addLogLine("CLI", "Clear\r\n");
+  Serial.printf(CLI_CLEAR);
 }
 
 /******************************************************
@@ -281,7 +285,7 @@ void onLs(EmbeddedCli *cli, char *args, void *context)
   std::vector<std::string>::const_iterator filesCit;
   size_t count = flockfs.list(files);
 
-  Serial.printf(CLI_CYA "Filesystem is holding %d files:\r\n" CLI_RESET, count);
+  flockLog.addLogLine("CLI", "ls\r\n");
 
   for (filesCit = files.begin(); filesCit != files.end(); ++filesCit)
   {
@@ -311,15 +315,18 @@ void onWrite(EmbeddedCli *cli, char *args, void *context)
     if (len == -1)
     {
       Serial.printf(CLI_BOLD_RED "Error writing to %s\r\n" CLI_RESET, fname);
+      flockLog.addLogLine("CLI", "onWrite() error writing to %s\r\n", fname);
     }
     else
     {
       Serial.printf(CLI_YEL "Wrote " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL " bytes to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, len, fname);
+      flockLog.addLogLine("CLI", "onWrite() wrote %d bytes to %s\r\n", len, fname);
     }
   }
   else
   {
     Serial.printf(CLI_BOLD_RED "Missing filename or data. " CLI_RESET " " CLI_YEL "Usage: write <filename> <string data to write>\r\n" CLI_RESET);
+    flockLog.addLogLine("CLI", "onWrite() bad invocation\r\n");
   }
 }
 

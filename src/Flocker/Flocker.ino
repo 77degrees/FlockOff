@@ -14,6 +14,7 @@
 #include "flockFs.h"
 #include "flockCfg.h"
 #include "scanner.h"
+#include "flockLog.h"
 
 // constants for config'ing objects
 #define GPS_PORT_TX 5
@@ -23,6 +24,7 @@
 #define USER_LED 21
 
 // globals
+FLOGGER flockLog;
 NMEAGPS gps;
 MBFS flockfs;
 CONFIG flockCfg;
@@ -46,9 +48,11 @@ void setup() {
   Serial.begin(112500);  // init USB serial
   delay(2000);
 
+  // order is important here
   initOk &= gps.begin(GPS_PORT_BAUD, GPS_PORT_RX, GPS_PORT_TX);
   initOk &= flockfs.begin();
   initOk &= flockCfg.begin();
+  initOk &= flockLog.begin(200);
   initOk &= flockScan.begin();
   initOk &= flockLED.begin(ADDR_LED_PIN, 140);
   initOk &= setupCLI();
@@ -63,6 +67,8 @@ void setup() {
   {
     flockCfg.registerListener(cfgListenerID);
   }
+
+  flockLog.addLogLine("main", "Leaving setup()\r\n");
 }
 
 void loop() {
@@ -74,6 +80,7 @@ void loop() {
     gps.update();
     flockLED.update();
     updateCLI();
+    flockLog.update();
   }
 
   if ((millis() - msFlash) > 500) {

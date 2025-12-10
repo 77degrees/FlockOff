@@ -24,6 +24,7 @@ public:
   bool copyFile(const char* src, const char* dst);
   bool deleteFile(const char* path);
   bool fileExists(const char* path);
+  bool rollFiles(const char* basePath, const char* ext, uint8_t count);
 
 private:
 };

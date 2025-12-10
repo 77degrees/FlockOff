@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "gps.h"
 #include "led.h"
+#include "flockLog.h"
 
 #include "globals.h"
 
@@ -29,13 +30,12 @@ void NMEAGPS::parseSentence()
 {
   static bool once = false;
   static uint32_t offset = millis();
+  static bool timeIsSet = false;
 
   switch (minmea_sentence_id(sentence, false)) 
   {
     case MINMEA_SENTENCE_RMC:
     {
-      static bool timeIsSet = false;
-
       struct minmea_sentence_rmc frame;
       if (minmea_parse_rmc(&frame, sentence)) 
       {
@@ -63,7 +63,7 @@ void NMEAGPS::parseSentence()
       }
       else
       {
-        Serial.printf("Error parsing RMC\r\n");
+        flockLog.addLogLine("GPS", "Error parsing RMC sentence\r\n");
       }
     }  break;
 
@@ -78,7 +78,7 @@ void NMEAGPS::parseSentence()
       }
       else
       {
-        Serial.printf("Error parsing GGA\r\n");
+        flockLog.addLogLine("GPS", "Error parsing GGA sentence\r\n");
       }
     }  break;
 
@@ -99,7 +99,7 @@ void NMEAGPS::parseSentence()
       }
       else
       {
-        Serial.printf("Error parsing GLL\r\n");
+        flockLog.addLogLine("GPS", "Error parsing GLL sentence\r\n");
       }
     }  break;
 
@@ -107,7 +107,7 @@ void NMEAGPS::parseSentence()
     //case MINMEA_INVALID:
     case MINMEA_SENTENCE_TXT:
     {
-      Serial.print(sentence);
+      flockLog.addLogLine("GPS", "Error parsing sentence >%s<\r\n", sentence);
     }  break;
   }
 
@@ -121,12 +121,14 @@ void NMEAGPS::parseSentence()
         flockLED.pulseGrn(LEDS::LED_GPS, 10);
         flockLED.stopBlu(LEDS::LED_GPS);
         flockLED.stopRed(LEDS::LED_GPS);
+        flockLog.addLogLine("GPS", "Fix acquired\r\n");
       }
     }
     else if (!flockLED.isBluActive(LEDS::LED_GPS))
     {
       flockLED.cycleBlu(LEDS::LED_GPS, 2500, 10);
       flockLED.cycleRed(LEDS::LED_GPS, 2500, 10);
+      flockLog.addLogLine("GPS", "Fix lost\r\n");
     }
   }
 }

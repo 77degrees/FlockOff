@@ -364,12 +364,21 @@ const char* CONFIG::getTimeZone()
   return (cfg[TIMEZONE]);
 }
 
-
+/******************************************************
+* Get the debug enabled state.  If true, the system
+* will be saving debug information to a log file in 
+* internal filesystem 
+******************************************************/
 bool CONFIG::getDebugEnabledState()
 {
   return (cfg[DEBUGENABLED]);
 }
 
+/******************************************************
+* Set the debug enabled state.  If true, the system
+* will be saving debug information to a log file in 
+* internal filesystem 
+******************************************************/
 void CONFIG::setDebugEnabledState()
 {
   bool done = false;
@@ -393,11 +402,23 @@ void CONFIG::setDebugEnabledState()
   this->writeConfig();
 }
 
+/******************************************************
+* Get the debug log file count.  When enabled, the 
+* system will open a new debug log file and "roll"
+* any existing files.  This config value controls how
+* many previous files to keep
+******************************************************/
 uint8_t CONFIG::getDebugFileCount()
 {
   return ((uint8_t)cfg[DEBUGROLLCOUNT]);
 }
 
+/******************************************************
+* Set the debug log file count.  When enabled, the 
+* system will open a new debug log file and "roll"
+* any existing files.  This config value controls how
+* many previous files to keep
+******************************************************/
 void CONFIG::setDebugFileRollCount()
 {
 

@@ -90,7 +90,16 @@ ssize_t MBFS::appendFile(const char* path, const uint8_t* buff, size_t len)
 {
     char fpath[65] = {0};
     snprintf(fpath, 64, "/%s", path);
-    File file = LittleFS.open(path, FILE_APPEND);
+    File file;
+
+    if (this->fileExists(path))
+    {
+        file = LittleFS.open(path, FILE_APPEND);
+    }
+    else
+    {
+        file = LittleFS.open(path, FILE_WRITE);
+    }
 
     if(!file || file.isDirectory())
     {
@@ -197,4 +206,46 @@ bool MBFS::deleteFile(const char* path)
     {
         return (false);
     }
+}
+
+bool MBFS::rollFiles(const char* basePath, const char* ext, uint8_t count)
+{
+    char* newName = (char*)ps_malloc(128);
+    if (!newName)
+    {
+        return (false);
+    }
+
+    char* oldName = (char*)ps_malloc(128);
+    if (!oldName)
+    {
+        free(newName);
+        return (false);
+    }
+
+    // remove the oldest file (if it exists)
+    snprintf(newName, 127, "%s.%d.%s", basePath, count--, ext);
+    this->deleteFile(newName);
+
+    while (count > 0)
+    {
+        snprintf(newName, 127, "%s.%d.%s", basePath, count--, ext);
+        this->deleteFile(newName);
+
+        if (!count)
+        {
+            break;
+        }
+
+        snprintf(oldName, 127, "%s.%d.%s", basePath, count, ext);
+        this->renameFile(oldName, newName);
+    }
+
+    snprintf(oldName, 127, "%s.%s", basePath, ext);
+    this->renameFile(oldName, newName);
+    
+    free(oldName);
+    free(newName);
+
+    return (true);
 }

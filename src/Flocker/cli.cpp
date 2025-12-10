@@ -3,6 +3,7 @@
 
 #include "cli.h"
 #include "flockCfg.h"
+#include "flockLog.h"
 
 #include "globals.h"
 
