@@ -250,7 +250,7 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
     doWiFi = true;
   }
 
-  flockLog.addLogLine("CLI", "Survey\r\n");
+  flockLog.addLogLine("CLI", "onSurvey()\r\n");
   flockScan.survey(interval, doWiFi, doBT, fname, doJson, notes);
 }
 
@@ -266,7 +266,7 @@ void onSurvey(EmbeddedCli* cli, char* args, void* context)
 ******************************************************/
 void onClear(EmbeddedCli *cli, char *args, void *context)
 {
-  flockLog.addLogLine("CLI", "Clear\r\n");
+  flockLog.addLogLine("CLI", "onClear()\r\n");
   Serial.printf(CLI_CLEAR);
 }
 
@@ -285,7 +285,7 @@ void onLs(EmbeddedCli *cli, char *args, void *context)
   std::vector<std::string>::const_iterator filesCit;
   size_t count = flockfs.list(files);
 
-  flockLog.addLogLine("CLI", "ls\r\n");
+  flockLog.addLogLine("CLI", "onLs()\r\n");
 
   for (filesCit = files.begin(); filesCit != files.end(); ++filesCit)
   {
@@ -347,15 +347,18 @@ void onDel(EmbeddedCli* cli, char* args, void* context)
     if (flockfs.deleteFile(fname))
     {
       Serial.printf(CLI_YEL "Deleted " CLI_BOLD_GRN "%s\r\n" CLI_RESET, fname);
+      flockLog.addLogLine("CLI", "onDel() deleted %s\r\n", fname);
     }
     else
     {
       Serial.printf(CLI_BOLD_RED "Failed to delete " CLI_BOLD_GRN "%s\r\n" CLI_RESET, fname);
+      flockLog.addLogLine("CLI", "onDel() error deleting %s\r\n", fname);
     }
   }
   else
   {
     Serial.printf(CLI_BOLD_RED "Missing filename. " CLI_YEL "Usage: rm <filename>\r\n" CLI_RESET);
+    flockLog.addLogLine("CLI", "onDel() invocation error\r\n");
   }
 }
 
@@ -378,15 +381,18 @@ void onMv(EmbeddedCli* cli, char* args, void* context)
     if (flockfs.renameFile(fromName, toName))
     {
       Serial.printf(CLI_YEL "Renamed " CLI_BOLD_GRN "%s" CLI_YEL " to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, fromName, toName);
+      flockLog.addLogLine("CLI", "onMv() moved %s to %s\r\n", fromName, toName);
     }
     else
     {
       Serial.printf(CLI_BOLD_RED "Failed to rename " CLI_BOLD_GRN "%s\r\n" CLI_RESET, fromName);
+      flockLog.addLogLine("CLI", "onMv() error in rename\r\n");
     }
   }
   else
   {
     Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: rm <old file name> <new file name>\r\n" CLI_RESET);
+    flockLog.addLogLine("CLI", "onMv() invocation error\r\n");
   }
 }
 
@@ -409,15 +415,18 @@ void onCp(EmbeddedCli* cli, char* args, void* context)
     if (flockfs.copyFile(fromName, toName))
     {
       Serial.printf(CLI_YEL "Copied " CLI_BOLD_GRN "%s" CLI_YEL " to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, fromName, toName);
+      flockLog.addLogLine("CLI", "onCp() copied %s to %s\r\n", fromName, toName);
     }
     else
     {
       Serial.printf(CLI_BOLD_RED "Failed to copy " CLI_BOLD_GRN "%s\r\n" CLI_RESET, fromName);
+      flockLog.addLogLine("CLI", "onCp() failed to copy moved %s to %s\r\n", fromName, toName);
     }
   }
   else
   {
     Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: cp <source file name> <destination file name>\r\n" CLI_RESET);
+    flockLog.addLogLine("CLI", "onCp() invocation error\r\n");
   }
 }
 
@@ -454,15 +463,18 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
       Serial.printf(CLI_RESET "\r\n");
 
       free(buf);
+      flockLog.addLogLine("CLI", "onCat() listed contents of %s (%d bytes)\r\n", fname, read);
     }
     else
     {
       Serial.printf("DID NOT ALLOCATE PSRAM\r\n");
+      flockLog.addLogLine("CLI", "onCat() failed to allocate psram\r\n");
     }
   }
   else
   {
     Serial.printf(CLI_BOLD_RED "Missing filename." CLI_YEL " Usage: cat <filename>\r\n" CLI_RESET);
+    flockLog.addLogLine("CLI", "onMv() invocation error\r\n");
   }
 }
 
@@ -478,6 +490,8 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
 ******************************************************/
 void onReset(EmbeddedCli *cli, char *args, void *context)
 {
+  flockLog.addLogLine("CLI", "onReset() shutting down!\r\n");
+  flockLog.flushNow();
   LittleFS.end();
   delay(1000);
 
@@ -543,7 +557,9 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
 
   strftime(tstring, 63, "%a, %d %b %Y %T %z", tmp);
   Serial.printf(CLI_YEL "\tCurrent wall clock time is " CLI_BOLD_GRN "%s\r\n" CLI_RESET, tstring);
-  Serial.printf(CLI_YEL "\tTimezone is set to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, flockCfg.getTimeZone());  
+  Serial.printf(CLI_YEL "\tTimezone is set to " CLI_BOLD_GRN "%s\r\n" CLI_RESET, flockCfg.getTimeZone());
+
+  flockLog.addLogLine("CLI", "onStatus()\r\n");
 }
 
 

@@ -13,6 +13,7 @@ public:
   bool begin(uint32_t interval);
   void addLogLine(const char* src, const char* fmt, ...);
   void update();
+  void flushNow();
 
 private:
   char* buf;

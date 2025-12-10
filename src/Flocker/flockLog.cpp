@@ -52,7 +52,7 @@ void FLOGGER::addLogLine(const char* src, const char* fmt, ...)
   strftime(tstring, 63, "%D %T", tmp);
 
   // leader of log line    [12345678] 12/9/2025 17:57:24 SOURCE::
-  snprintf(fullFormatString, LOG_LINE_SIZE - 1, "[%08d] %s %s::%s", millis(), tmp, src, fmt);
+  snprintf(fullFormatString, LOG_LINE_SIZE - 1, "[%08d] %s %s::%s", millis(), tstring, src, fmt);
 
   va_list args;
   va_start(args, fmt);
@@ -72,9 +72,15 @@ void FLOGGER::update()
     {
       if (strlen(buf))
       {
-        flockfs.appendFile(this->fname, (uint8_t*)buf, strlen(buf));
+        ssize_t appended = flockfs.appendFile(this->fname, (uint8_t*)buf, strlen(buf));
         buf[0] = '\0';
       }
     }
   }
+}
+
+void FLOGGER::flushNow()
+{
+  this->updateOffset += (2 * this->updateInterval);
+  this->update();
 }

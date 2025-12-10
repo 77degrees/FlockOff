@@ -2,6 +2,7 @@
 
 #include "flockCfg.h"
 #include "led.h"
+#include "flockLog.h"
 
 #include "globals.h"
 
@@ -283,6 +284,7 @@ void CONFIG::selectTimeZone()
   if (selected > tzCount) selected = 0;   // sanity check
 
   cfg[TIMEZONE] = zones[selected].tz;
+  flockLog.addLogLine("CFG", "selectTimeZone() set to %s\r\n", zones[selected].tz);
   this->setNewConfigFlags(true);
   this->setTimeZone();
   this->writeConfig();
@@ -306,6 +308,7 @@ void CONFIG::setDeviceName()
 {
   this->readString((CLI_CYA "Enter new device name: " CLI_RESET));
   cfg[DEVICENAME] = inputstr;
+  flockLog.addLogLine("CFG", "setDeviceName() set to %s\r\n", inputstr);
   this->setNewConfigFlags(true);
   this->writeConfig();
 }
@@ -336,6 +339,7 @@ void CONFIG::setLEDBrightness()
     {
       goodBrightEntered = true;
       cfg[LEDBRIGHTNESS] = (uint8_t)bright;
+      flockLog.addLogLine("CFG", "setLEDBrightness() set to %d\r\n", bright);
 
       if (bright == 0)
       {
@@ -430,6 +434,7 @@ void CONFIG::setDebugFileRollCount()
     if (count > 0 && count < 11)
     {
       cfg[DEBUGROLLCOUNT] = count;
+      flockLog.addLogLine("CFG", "setDebugFileRollCount() set to %d\r\n", count);
       done = true;
     }
   }

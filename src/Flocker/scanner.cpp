@@ -11,6 +11,7 @@
 #include "esp_wifi_types.h"
 
 #include "scanner.h"
+#include "flockLog.h"
 
 #include "globals.h"
 
@@ -374,6 +375,7 @@ void SCANNER::stopBLE()
 *****************************************************/
 void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fname, bool doJson, const char* notes)
 {
+  flockLog.addLogLine("SCAN", "survey() starting\r\n");
   uint32_t msnow = millis();
   bleDevices.clear();
   wifiDevices.clear();
@@ -390,7 +392,9 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
     Serial.printf(CLI_CYA "Starting WiFi.\r\n" CLI_RESET);
     esp_wifi_set_promiscuous(true);
     Serial.printf(CLI_YEL "Setting channel %d" CLI_RESET, channels[channelInx]);
-    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);   
+    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);
+
+    flockLog.addLogLine("SCAN", "survey() starting WiFi scan\r\n");
 
     while (scanning)
     {
@@ -415,15 +419,19 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
 
       flockLED.update();
     }
+    
+    flockLog.addLogLine("SCAN", "survey() WiFi scan done\r\n");
   }
 
   if (doBT)
   {
+    flockLog.addLogLine("SCAN", "survey() starting BTLE scan\r\n");
     Serial.printf(CLI_CYA "Starting BLE\r\n");
     this->startBLE();
     delay(interval * 5);
     this->stopBLE();
     Serial.printf(CLI_CYA "BLE Done, survey complete\r\n");
+    flockLog.addLogLine("SCAN", "survey() BTLE scan done\r\n");
   }
 
   JsonDocument sur;
@@ -478,6 +486,7 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
       
       size_t written = flockfs.writeFile(fname, (uint8_t*)output, strlen(output));
       Serial.printf(CLI_CYA "Wrote " CLI_GRN "%d" CLI_CYA " bytes to file\r\n" CLI_RESET, written);
+      flockLog.addLogLine("SCAN", "survey() wrote %d bytes to %s\r\n", written, fname);
     }
 
     free (output);

@@ -90,16 +90,8 @@ ssize_t MBFS::appendFile(const char* path, const uint8_t* buff, size_t len)
 {
     char fpath[65] = {0};
     snprintf(fpath, 64, "/%s", path);
-    File file;
 
-    if (this->fileExists(path))
-    {
-        file = LittleFS.open(path, FILE_APPEND);
-    }
-    else
-    {
-        file = LittleFS.open(path, FILE_WRITE);
-    }
+    File file = LittleFS.open(fpath, FILE_APPEND);
 
     if(!file || file.isDirectory())
     {
