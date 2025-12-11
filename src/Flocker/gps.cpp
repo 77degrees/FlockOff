@@ -29,6 +29,7 @@ bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
 void NMEAGPS::parseSentence() 
 {
   static bool once = false;
+  static bool loggedFix = false;
   static uint32_t offset = millis();
   static bool timeIsSet = false;
 
@@ -111,6 +112,11 @@ void NMEAGPS::parseSentence()
     }  break;
   }
 
+  if (fixQuality == 0 && dataValid)
+  {
+    fixQuality = 1;
+  }
+
   if (once)
   {
     if ((fixQuality > 0) || dataValid)
@@ -121,7 +127,12 @@ void NMEAGPS::parseSentence()
         flockLED.pulseGrn(LEDS::LED_GPS, 10);
         flockLED.stopBlu(LEDS::LED_GPS);
         flockLED.stopRed(LEDS::LED_GPS);
-        flockLog.addLogLine("GPS", "Fix acquired\r\n");
+
+        if (!loggedFix)
+        {
+          flockLog.addLogLine("GPS", "Fix acquired\r\n");
+          loggedFix = true;
+        }
       }
     }
     else if (!flockLED.isBluActive(LEDS::LED_GPS))
@@ -129,6 +140,7 @@ void NMEAGPS::parseSentence()
       flockLED.cycleBlu(LEDS::LED_GPS, 2500, 10);
       flockLED.cycleRed(LEDS::LED_GPS, 2500, 10);
       flockLog.addLogLine("GPS", "Fix lost\r\n");
+      loggedFix = false;
     }
   }
 }

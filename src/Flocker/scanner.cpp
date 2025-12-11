@@ -1,4 +1,5 @@
 #include <map>
+#include <list>
 
 #include <WiFi.h>
 #include <NimBLEDevice.h>
@@ -66,7 +67,6 @@ uint8_t fixedParameterLength[] = {
 // Flock type things at this point (found by WiFi)
 struct __attribute__((packed)) found_wifi_t
 {
-  FLOCK_DISCOVERY_METHOD method;
   uint8_t subtype;
   uint8_t channel;
   char ssid[SSID_LEN + 1];
@@ -76,13 +76,13 @@ struct __attribute__((packed)) found_wifi_t
 
 // structure to hold details about every device found; not just
 // Flock type things at this point (found by Bluetooth LE)
-struct __attribute__((packed)) found_ble_t
+struct found_ble_t
 {
-  FLOCK_DISCOVERY_METHOD method;
   char name[SSID_LEN + 1];
-  uint8_t addr[6];
-  char mfg[1001];
+  uint8_t mac[6];
   int8_t rssi;
+  std::list<uint16_t> services16;
+  std::list<std::string> services128;
 };
 
 // variable length tagged parameter in a management packet.  A tagged parameter
@@ -111,6 +111,8 @@ struct __attribute__((packed)) wifi_ieee80211_mac_hdr_t
 static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                                    36, 40, 44, 48, 149, 153, 157, 161, 165};
 
+static int16_t minBTRSSI;
+static int16_t minWiFiRSSI;
 const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
 static uint16_t channelInx = 0;   
 static bool scanning = false;
@@ -169,7 +171,6 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
 
   // a place to store the results
   found_wifi_t wifi;
-  wifi.method = WIFI_DISCOVERY;         // we found this device through wifi
   wifi.subtype = stype;                 // keep track of the frame subtype
   memset(wifi.ssid, 0, SSID_LEN + 1);   // clear buffer for ssid
 
@@ -225,33 +226,11 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
 {
   void onResult(const NimBLEAdvertisedDevice* advertisedDevice)
   {
-    btDevice.method = BTLE_DISCOVERY;
+    resetDeviceHolder();
     btDevice.rssi = advertisedDevice->getRSSI();
 
-    payload = advertisedDevice->getPayload();
-    citPayload = payload.begin();
-    if (citPayload == payload.end())
-    {
-      return;
-    }
-
-    for (size_t ii = 0; ii < 6; ++ii)
-    {
-      btDevice.addr[ii] = *citPayload;
-      ++citPayload;
-    }
-
-    //memcpy(btDevice.addr, advertisedDevice->getAddress().getVal(), 6);
-
-    /*
-    uint8_t mac[6];
-    NimBLEAddress addr = advertisedDevice->getAddress();
-    String macStr = addr.toString().c_str();
-    if (!parseMac6(macStr, mac)) 
-    {
-      return;
-    }
-    */
+    //const uint8_t* macVal = advertisedDevice->getAddress().getVal();
+    memcpy(btDevice.mac, advertisedDevice->getAddress().getVal(), 6);
 
     if (advertisedDevice->haveName())
     {
@@ -282,10 +261,31 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
       }
     }
 
-    strncpy(btDevice.mfg, advertisedDevice->toString().c_str(), 1000);
+    if (advertisedDevice->haveServiceUUID())
+    {
+      for(int ii = 0; ii < advertisedDevice->getServiceUUIDCount(); ++ii)
+      {
+        BLEUUID serviceUUID = advertisedDevice->getServiceUUID(ii);
+        const uint8_t* svcid = serviceUUID.getValue();
+
+        if (serviceUUID.bitSize() == 16)
+        {
+          uint16_t uuid16 = (((uint16_t)svcid[1] << 8) & 0xff00) | ((uint16_t)svcid[0] & 0x00ff);
+          btDevice.services16.push_back(uuid16);
+        }
+        else if (serviceUUID.bitSize() == 128)
+        {
+          btDevice.services128.push_back(serviceUUID.toString());
+        }
+        else
+        {
+          Serial.printf(CLI_RED "Unknown service size of %d bits\r\n" CLI_RESET, serviceUUID.bitSize());
+        }
+      }
+    }
 
     hasher.begin();
-    hasher.add((uint8_t*)&btDevice, sizeof(btDevice) - 1);
+    hasher.add((uint8_t*)&btDevice, 39);
     hasher.calculate();
     hasher.getBytes(md5sum);
 
@@ -307,6 +307,14 @@ private:
   found_ble_t btDevice;
   std::vector<uint8_t> payload;
   std::vector<uint8_t>::const_iterator citPayload;
+
+  void resetDeviceHolder()
+  {
+    memset(btDevice.name, 0, SSID_LEN + 1);
+    memset(btDevice.mac, 0, 6);
+    btDevice.services16.clear();
+    btDevice.services128.clear();
+  }
 };
 
 
@@ -430,8 +438,48 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
     this->startBLE();
     delay(interval * 5);
     this->stopBLE();
-    Serial.printf(CLI_CYA "BLE Done, survey complete\r\n");
+    Serial.printf(CLI_CYA "BLE Done, survey complete, found %d devices\r\n", bleDevices.size());
     flockLog.addLogLine("SCAN", "survey() BTLE scan done\r\n");
+
+    for (citBleDevices = bleDevices.begin(); citBleDevices != bleDevices.end(); ++citBleDevices)
+    {
+      Serial.printf("BLE Device:\r\n ->Name %s\r\n ->mac %s\r\n  ->rssi %d\r\n",
+        citBleDevices->second.name, macToText(citBleDevices->second.mac), citBleDevices->second.rssi);
+      
+      std::list<uint16_t> tmp16 = citBleDevices->second.services16;
+      if (tmp16.size())
+      {
+        Serial.printf("  ->There are %d 16-bit UUIDs\r\n", tmp16.size());
+        for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
+        {
+          Serial.printf("    ->0x%04x (%d)\r\n", *cit, *cit);
+        }
+      }
+          
+      std::list<std::string> tmpStr = citBleDevices->second.services128;
+      if (tmpStr.size())
+      {
+        Serial.printf("  ->There are %d 128-bit UUIDs\r\n", tmpStr.size());
+        for (std::list<std::string>::const_iterator cit = tmpStr.begin(); cit != tmpStr.end(); ++cit)
+        {
+          Serial.printf("    ->%s\r\n", *cit);
+        }
+      }
+
+
+      /*
+      for (std::list<uint16_t>::const_iterator cit = citBleDevices->second.services16.begin(); cit != citBleDevices->second.services16.end(); ++cit)
+      {
+        Serial.printf("    ->0x%04x\r\n", *cit);
+      }
+
+      Serial.printf(" ->128-bit UUIDs\r\n");
+      for (std::list<uint16_t>::const_iterator cit = citBleDevices->second.services16.begin(); cit != citBleDevices->second.services16.end(); ++cit)
+      {
+        Serial.printf("    ->%s\r\n", *cit);
+      }
+      */
+    }
   }
 
   JsonDocument sur;
@@ -456,7 +504,7 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
   for (citWifiDevices = wifiDevices.begin(); citWifiDevices != wifiDevices.end(); ++citWifiDevices)
   {
     dev.clear();
-    dev["Method"] = discoveryToText(citWifiDevices->second.method);
+    dev["Method"] = discoveryToText(WIFI_DISCOVERY);
     dev["Subtype"] = mgmtSubtypeToText(citWifiDevices->second.subtype);
     dev["BSSID"] = macToText(citWifiDevices->second.mac);
     dev["Channel"] = citWifiDevices->second.channel;
