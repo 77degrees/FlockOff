@@ -459,7 +459,7 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
     {
       size_t read = flockfs.readFile(fname, (uint8_t*)buf, fileLen);
       Serial.printf(CLI_CYA);
-      Serial.printf("%s", (char*)buf);
+      Serial.printf((char*)buf);
       Serial.printf(CLI_RESET "\r\n");
 
       free(buf);

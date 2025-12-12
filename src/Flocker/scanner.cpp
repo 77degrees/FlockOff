@@ -16,6 +16,8 @@
 
 #include "globals.h"
 
+#define BIG_BUF_SIZE (32 * 1024)
+
 // We're only looking at management 802.11 frames.  There are 16
 // subtypes of management frames (as #defined here).  The packet
 // structure is different for each subtype, but in general:
@@ -71,6 +73,7 @@ struct __attribute__((packed)) found_wifi_t
   uint8_t channel;
   char ssid[SSID_LEN + 1];
   uint8_t mac[6];
+  uint32_t timestamp;
   int8_t rssi;
 };
 
@@ -81,8 +84,11 @@ struct found_ble_t
   char name[SSID_LEN + 1];
   uint8_t mac[6];
   int8_t rssi;
+  uint32_t timestamp;
   std::list<uint16_t> services16;
   std::list<std::string> services128;
+  std::list<uint16_t> serviceData16;
+  std::list<std::string> serviceData128;
 };
 
 // variable length tagged parameter in a management packet.  A tagged parameter
@@ -123,6 +129,8 @@ static std::map<uint32_t, found_wifi_t> wifiDevices;
 static std::map<uint32_t, found_wifi_t>::const_iterator citWifiDevices;
 static std::map<uint32_t, found_ble_t> bleDevices;
 static std::map<uint32_t, found_ble_t>::const_iterator citBleDevices;
+
+void reverseBytes(uint8_t* data, size_t len);
 
 /*************************************************
 * Promiscuous mode packet callback handler
@@ -197,6 +205,7 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
       wifi.channel = channels[channelInx]; // wifi channel
       wifi.rssi = ppkt->rx_ctrl.rssi;      // signal strength
       memcpy(wifi.mac, hdr->addr3, 6);     // MAC of the WiFi AP that sent the packet
+      wifi.timestamp = millis();           // system timestamp (used for aging)
 
       // generate a key for the std::map - this will be the md5 hash of the found packet struct
       // Note, do not include the RSSI in the hash, or we'll end up with dups in the map
@@ -227,10 +236,12 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
   void onResult(const NimBLEAdvertisedDevice* advertisedDevice)
   {
     resetDeviceHolder();
+    btDevice.timestamp = millis();
     btDevice.rssi = advertisedDevice->getRSSI();
 
     //const uint8_t* macVal = advertisedDevice->getAddress().getVal();
     memcpy(btDevice.mac, advertisedDevice->getAddress().getVal(), 6);
+    reverseBytes(btDevice.mac, 6);
 
     if (advertisedDevice->haveName())
     {
@@ -284,6 +295,31 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
       }
     }
 
+    if (advertisedDevice->haveServiceData())
+    {
+      for(int ii = 0; ii < advertisedDevice->getServiceDataCount(); ++ii)
+      {
+        BLEUUID serviceDataUUID = advertisedDevice->getServiceDataUUID();
+        const uint8_t* svcData = serviceDataUUID.getValue();
+
+        if (serviceDataUUID.bitSize() == 16)
+        {
+          uint16_t uuid16 = (((uint16_t)svcData[1] << 8) & 0xff00) | ((uint16_t)svcData[0] & 0x00ff);
+          btDevice.serviceData16.push_back(uuid16);
+        }
+        else if (serviceDataUUID.bitSize() == 128)
+        {
+          btDevice.services128.push_back(serviceDataUUID.toString());
+        }
+        else
+        {
+          Serial.printf(CLI_RED "Unknown service data size of %d bits\r\n" CLI_RESET, serviceDataUUID.bitSize());
+        }
+      }
+    }
+
+
+
     hasher.begin();
     hasher.add((uint8_t*)&btDevice, 39);
     hasher.calculate();
@@ -314,6 +350,8 @@ private:
     memset(btDevice.mac, 0, 6);
     btDevice.services16.clear();
     btDevice.services128.clear();
+    btDevice.serviceData16.clear();
+    btDevice.serviceData128.clear();
   }
 };
 
@@ -440,46 +478,6 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
     this->stopBLE();
     Serial.printf(CLI_CYA "BLE Done, survey complete, found %d devices\r\n", bleDevices.size());
     flockLog.addLogLine("SCAN", "survey() BTLE scan done\r\n");
-
-    for (citBleDevices = bleDevices.begin(); citBleDevices != bleDevices.end(); ++citBleDevices)
-    {
-      Serial.printf("BLE Device:\r\n ->Name %s\r\n ->mac %s\r\n  ->rssi %d\r\n",
-        citBleDevices->second.name, macToText(citBleDevices->second.mac), citBleDevices->second.rssi);
-      
-      std::list<uint16_t> tmp16 = citBleDevices->second.services16;
-      if (tmp16.size())
-      {
-        Serial.printf("  ->There are %d 16-bit UUIDs\r\n", tmp16.size());
-        for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
-        {
-          Serial.printf("    ->0x%04x (%d)\r\n", *cit, *cit);
-        }
-      }
-          
-      std::list<std::string> tmpStr = citBleDevices->second.services128;
-      if (tmpStr.size())
-      {
-        Serial.printf("  ->There are %d 128-bit UUIDs\r\n", tmpStr.size());
-        for (std::list<std::string>::const_iterator cit = tmpStr.begin(); cit != tmpStr.end(); ++cit)
-        {
-          Serial.printf("    ->%s\r\n", *cit);
-        }
-      }
-
-
-      /*
-      for (std::list<uint16_t>::const_iterator cit = citBleDevices->second.services16.begin(); cit != citBleDevices->second.services16.end(); ++cit)
-      {
-        Serial.printf("    ->0x%04x\r\n", *cit);
-      }
-
-      Serial.printf(" ->128-bit UUIDs\r\n");
-      for (std::list<uint16_t>::const_iterator cit = citBleDevices->second.services16.begin(); cit != citBleDevices->second.services16.end(); ++cit)
-      {
-        Serial.printf("    ->%s\r\n", *cit);
-      }
-      */
-    }
   }
 
   JsonDocument sur;
@@ -489,6 +487,7 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
   JsonArray location = sur["LocationLongLat"].to<JsonArray>();
   location.add(gps.getLongitude());
   location.add(gps.getLatitude());
+  sur["SatelliteCount"] = gps.getSatelliteCount();
 
   time_t t = time(NULL);
   tm *tmp;
@@ -498,7 +497,7 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
   sur["DateTime"] = tstring;
   sur["Timezone"] = flockCfg.getTimeZone();
 
-  JsonArray devs = sur["Devices"].to<JsonArray>();
+  JsonArray devs = sur["WiFiDevices"].to<JsonArray>();
   JsonDocument dev;
 
   for (citWifiDevices = wifiDevices.begin(); citWifiDevices != wifiDevices.end(); ++citWifiDevices)
@@ -510,12 +509,64 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
     dev["Channel"] = citWifiDevices->second.channel;
     dev["SSID"] = citWifiDevices->second.ssid;
     dev["RSSSI"] = citWifiDevices->second.rssi;
-    //dev["MfgData"] = citWifiDevices->second.mfg;
 
     devs.add(dev);
   }
 
-  Serial.printf(CLI_CYA "Found " CLI_GRN "%d" CLI_CYA " devices:\r\n" CLI_RESET, wifiDevices.size());
+  JsonArray btdevs = sur["BLEDevices"].to<JsonArray>();
+
+  for (citBleDevices = bleDevices.begin(); citBleDevices != bleDevices.end(); ++citBleDevices)
+  {
+    dev.clear();
+    dev["Method"] = discoveryToText(BTLE_DISCOVERY);
+    dev["Name"] = citBleDevices->second.name;
+    dev["MAC"] = macToText(citBleDevices->second.mac);
+    dev["RSSI"] = citBleDevices->second.rssi;
+
+    JsonArray uid16 = dev["UUID16bit"].to<JsonArray>();
+    std::list<uint16_t> tmp16 = citBleDevices->second.services16;
+    if (tmp16.size())
+    {
+      for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
+      {
+        uid16.add(*cit);
+      }
+    }
+
+    JsonArray uid128 = dev["UUID128bit"].to<JsonArray>();
+    std::list<std::string> tmp128 = citBleDevices->second.services128;
+    if (tmp16.size())
+    {
+      for (std::list<std::string>::const_iterator cit = tmp128.begin(); cit != tmp128.end(); ++cit)
+      {
+        uid128.add(*cit);
+      }
+    }
+
+    JsonArray duid16 = dev["DataUUID16bit"].to<JsonArray>();
+    tmp16 = citBleDevices->second.serviceData16;
+    if (tmp16.size())
+    {
+      for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
+      {
+        duid16.add(*cit);
+      }
+    }
+
+    JsonArray duid128 = dev["DataUUID128bit"].to<JsonArray>();
+    tmp128 = citBleDevices->second.serviceData128;
+    if (tmp16.size())
+    {
+      for (std::list<std::string>::const_iterator cit = tmp128.begin(); cit != tmp128.end(); ++cit)
+      {
+        duid128.add(*cit);
+      }
+    }
+    
+    btdevs.add(dev);
+  }
+
+  Serial.printf(CLI_CYA "Found " CLI_GRN "%d" CLI_CYA " devices:\r\n" CLI_RESET, wifiDevices.size() + bleDevices.size());
   serializeJsonPretty(sur, Serial);
   Serial.printf("\r\n");
 
@@ -524,13 +575,13 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
     Serial.printf(CLI_CYA "Saving survey results to " CLI_GRN "%s" CLI_CYA ", format " CLI_YEL "%s\r\n" CLI_RESET,
       fname, doJson ? "JSON" : "text");
 
-    char* output = (char*)ps_malloc(4097);
-    memset(output, 0, 4097);
+    char* output = (char*)ps_malloc(BIG_BUF_SIZE + 1);
+    memset(output, 0, BIG_BUF_SIZE + 1);
 
     //if (doJson)
     {
  
-      serializeJson(sur, output, 4096);
+      serializeJson(sur, output, BIG_BUF_SIZE);
       
       size_t written = flockfs.writeFile(fname, (uint8_t*)output, strlen(output));
       Serial.printf(CLI_CYA "Wrote " CLI_GRN "%d" CLI_CYA " bytes to file\r\n" CLI_RESET, written);
@@ -595,4 +646,29 @@ const char* macToText(const uint8_t* mac)
   snprintf(ret, 19, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
   return (ret);
+}
+
+void reverseBytes(uint8_t* data, size_t len)
+{
+  if (!data || !len)
+  {
+    return;
+  }
+
+  uint8_t* tmp = (uint8_t*)ps_malloc(len);
+  if (!tmp)
+  {
+    return;
+  }
+
+  memcpy(tmp, data, len);
+  size_t inx = 0;
+  while(--len)
+  {
+    data[inx++] = tmp[len];
+  }
+
+  data[inx] = tmp[0];
+
+  free(tmp);
 }
