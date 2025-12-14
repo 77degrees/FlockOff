@@ -210,7 +210,7 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
       // generate a key for the std::map - this will be the md5 hash of the found packet struct
       // Note, do not include the RSSI in the hash, or we'll end up with dups in the map
       hasher.begin();
-      hasher.add((uint8_t*)&wifi, sizeof(wifi) - 1);
+      hasher.add((uint8_t*)&wifi, 39);
       hasher.calculate();
       hasher.getBytes(md5sum);
 
@@ -317,8 +317,6 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
         }
       }
     }
-
-
 
     hasher.begin();
     hasher.add((uint8_t*)&btDevice, 39);
