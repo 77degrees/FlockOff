@@ -220,3 +220,65 @@ sqlite> select * from surveys;
 
 `notes` is the value from the `-j NOTES` parameter of the `survey` command.  `dateTime`, `longitude`, `lattitude`, and `satCount` are populated by the GPS module.
 
+The `wifi` table contains discovered broadcasters.  To list all of that data for this survey:
+```  
+sqlite> select w.type, w.ssid, w.bssid, w.rssi, w.channel from wifi as w join surveys s on w.surveyInx = s.surveyInx where w.type not like 'probe request' order by w.bssid;
+┌────────────────┬──────────┬───────────────────┬──────┬─────────┐
+│      type      │   ssid   │       bssid       │ rssi │ channel │
+├────────────────┼──────────┼───────────────────┼──────┼─────────┤
+│ beacon         │ virus    │ a0:36:bc:db:ca:a0 │ -52  │ 12      │
+│ beacon         │ virus    │ a0:36:bc:db:ca:a0 │ -51  │ 11      │
+│ beacon         │ flu      │ b2:28:aa:1c:0a:29 │ -51  │ 2       │
+│ beacon         │ flu      │ b2:28:aa:1c:0a:29 │ -53  │ 1       │
+│ probe response │ flu      │ b2:28:aa:1c:0a:29 │ -53  │ 2       │
+│ beacon         │ flu_IoT  │ b2:28:aa:1c:0a:2a │ -52  │ 1       │
+│ beacon         │ flu_IoT  │ b2:28:aa:1c:0a:2a │ -53  │ 2       │
+│ probe response │ flu_IoT  │ b2:28:aa:1c:0a:2a │ -54  │ 2       │
+│ beacon         │ <HIDDEN> │ cc:28:aa:1c:0a:28 │ -53  │ 2       │
+│ beacon         │ <HIDDEN> │ cc:28:aa:1c:0a:28 │ -51  │ 1       │
+└────────────────┴──────────┴───────────────────┴──────┴─────────┘
+```  
+`type` is the type of 802.11 wifi management packet was captured (beacon, probe request, probe response, etc.), `ssid` is the broadcast ssid, `bssid` is the MAC of the broadcaster, `rssi` is signal strength, and `channel` is the wifi channel.
+
+In this case, there were 3 unique MAC addresses seen, all of relatively the same signal strength.
+
+The `btle` table contains bluetooth broadcasters:
+```  
+sqlite> select b.name, b.mac, b.rssi from btle as b join surveys s on b.surveyInx = s.surveyInx order by b.mac;
+┌───────────────────────┬───────────────────┬──────┐
+│         name          │        mac        │ rssi │
+├───────────────────────┼───────────────────┼──────┤
+│                       │ 01:c5:61:6d:2c:b4 │ -53  │
+│                       │ 04:a0:29:10:68:e4 │ -78  │
+│                       │ 08:66:98:f2:a3:ba │ -84  │
+│                       │ 34:fe:3e:a1:f5:e2 │ -63  │
+│                       │ 56:f6:b3:ad:60:5f │ -82  │
+│                       │ 66:7f:66:1d:ec:ce │ -68  │
+│                       │ 6d:67:db:fd:9e:67 │ -84  │
+│                       │ 6e:d3:64:c3:af:77 │ -79  │
+│                       │ 77:50:8c:84:fa:72 │ -45  │
+│                       │ 78:90:0b:c0:26:1b │ -69  │
+│                       │ 7e:91:43:7c:ff:bf │ -75  │
+│ OfficeJet 5200 series │ 86:a9:3e:bc:5c:c9 │ -76  │
+│                       │ 8c:ea:48:a7:2c:03 │ -73  │
+│                       │ a8:51:ab:c6:11:25 │ -82  │
+│                       │ c0:c9:9b:f2:d7:43 │ -75  │
+│                       │ c1:cf:e2:c9:64:5f │ -85  │
+│                       │ ca:ba:59:12:f6:0d │ -66  │
+│ N00DM                 │ ce:a3:ad:95:04:29 │ -80  │
+│                       │ d5:93:9d:03:9f:f5 │ -80  │
+│                       │ ea:a8:d0:6f:67:89 │ -84  │
+│                       │ ec:9d:4d:3c:28:2b │ -68  │
+└───────────────────────┴───────────────────┴──────┘
+```  
+There are quite a few BTLE devices found.  To narrow it down to those that are broadcasting a UUID:
+```  
+sqlite> select b.name, b.mac, u.uuid16 from btle b join uuid16 u on b.btInx = u.btInx where b.surveyInx = 1 order by b.mac;
+┌───────────────────────┬───────────────────┬────────┐
+│         name          │        mac        │ uuid16 │
+├───────────────────────┼───────────────────┼────────┤
+│ OfficeJet 5200 series │ 86:a9:3e:bc:5c:c9 │ 65144  │
+│ N00DM                 │ ce:a3:ad:95:04:29 │ 65199  │
+└───────────────────────┴───────────────────┴────────┘
+```  
+
