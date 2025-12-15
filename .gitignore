@@ -2,3 +2,4 @@
 .theia/
 venv/
 *.db
+dataGrip/
