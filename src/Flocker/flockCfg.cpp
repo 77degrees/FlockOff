@@ -13,6 +13,7 @@
 #define WIFIAPS "WifiAPs"
 #define DEBUGENABLED "debugEnabled"
 #define DEBUGROLLCOUNT "debugLogRollCount"
+#define MINRSSI "minRSSI"
 
 // name of configuration file
 #define CONFIG_FILENAME "config.json"
@@ -138,6 +139,7 @@ bool CONFIG::buildDefualtConfig()
   cfg[LEDBRIGHTNESS] = 128;                    // max LED brightness when flashing (0-255) 
   cfg[DEBUGENABLED] = false;
   cfg[DEBUGROLLCOUNT] = 3;
+  cfg[MINRSSI] = -85;
 
   JsonArray wifiAPs = cfg[WIFIAPS].to<JsonArray>();
 
@@ -248,6 +250,7 @@ void CONFIG::setConfigValues()
     Serial.printf(CLI_YEL "3) Set max LED brightness (" CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL ")\r\n" CLI_RESET, (int)this->getLEDBrightness());
     Serial.printf(CLI_YEL "4) Set debug logging (" CLI_BOLD_GRN "%s" CLI_RESET CLI_YEL ")\r\n" CLI_RESET, this->getDebugEnabledState() ? "enabled" : "disabled");
     Serial.printf(CLI_YEL "5) Set debug file rolling count (" CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL ")\r\n" CLI_RESET, (int)this->getDebugFileCount());
+    Serial.printf(CLI_YEL "6) Set minimum RSSI (" CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL ")\r\n" CLI_RESET, (int)this->getMinRSSI());
 
     char choice = this->readChar((CLI_CYA "Select number of item to change or 'x' to exit with no changes: " CLI_RESET));
     Serial.printf("\r\n\r\n");
@@ -259,6 +262,7 @@ void CONFIG::setConfigValues()
       case '3':  this->setLEDBrightness(); Serial.printf("\r\n"); break;
       case '4':  this->setDebugEnabledState(); Serial.printf("\r\n"); break;
       case '5':  this->setDebugFileRollCount(); Serial.printf("\r\n"); break;
+      case '6':  this->setMinRSSI(); Serial.printf("\r\n"); break;
       case 'x':  configDone = true; break;
       default: Serial.printf(CLI_BOLD_RED "Unknown entry '%c'\r\n" CLI_RESET, choice);
     }
@@ -299,6 +303,41 @@ void CONFIG::setTimeZone()
   setenv("TZ", tz, 1);
   tzset();  
 }
+
+
+
+/******************************************************
+* Set the minimum RSSI
+******************************************************/
+void CONFIG::setMinRSSI()
+{
+  bool goodRSSIEntered = false;
+
+  while (!goodRSSIEntered)
+  {
+    int  RSSI = this->readInt((CLI_CYA "Enter new minimum RSSI (-90 to -10): " CLI_RESET));
+
+    if (RSSI >= -90 && RSSI <= -10)
+    {
+      goodRSSIEntered = true;
+      cfg[MINRSSI] = (int8_t)RSSI;
+      flockLog.addLogLine("CFG", "setMinRSSI() set to %d\r\n", RSSI);
+    }
+  }
+
+  this->setNewConfigFlags(true);
+  this->writeConfig();
+}
+
+/******************************************************
+* Get the minimium RSSI
+******************************************************/
+int8_t CONFIG::getMinRSSI()
+{
+  return ((int8_t)cfg[MINRSSI]);
+}
+
+
 
 
 /******************************************************

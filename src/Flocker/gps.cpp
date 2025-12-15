@@ -14,6 +14,13 @@ bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
   fixQuality = 0;
   satelliteCount = 0;
 
+  once = false;
+  loggedFix = false;
+  firstRMC = false;
+  firstGGA = false;
+  firstGLL = false;
+  timeIsSet = false;
+
   course = 0.0;
   latitude = 0.0;
   longitude = 0.0;
@@ -28,10 +35,7 @@ bool NMEAGPS::begin(uint32_t baud, int8_t rxPin, int8_t txPin)
 
 void NMEAGPS::parseSentence() 
 {
-  static bool once = false;
-  static bool loggedFix = false;
   static uint32_t offset = millis();
-  static bool timeIsSet = false;
 
   switch (minmea_sentence_id(sentence, false)) 
   {
@@ -47,20 +51,7 @@ void NMEAGPS::parseSentence()
 
         minmea_getdatetime(&this->localtm, &frame.date, &frame.time);
         once = true;
-
-        if (!timeIsSet)
-        {
-          setenv("TZ", "GMT0", 1);
-          tzset();
-
-          timeval setTime;
-          setTime.tv_sec = mktime(&this->localtm);
-          setTime.tv_usec = 0;
-          settimeofday(&setTime, NULL);
-
-          flockCfg.setTimeZone();
-          timeIsSet = true;
-        }
+        firstRMC = true;
       }
       else
       {
@@ -76,6 +67,7 @@ void NMEAGPS::parseSentence()
         this->fixQuality = frame.fix_quality;
         this->satelliteCount = frame.satellites_tracked;
         once = true;
+        firstGGA = true;
       }
       else
       {
@@ -97,6 +89,7 @@ void NMEAGPS::parseSentence()
           dataValid = false;
         }
         once = true;
+        firstGLL = true;
       }
       else
       {
@@ -142,11 +135,26 @@ void NMEAGPS::parseSentence()
       flockLog.addLogLine("GPS", "Fix lost\r\n");
       loggedFix = false;
     }
-  }
+  } 
 }
 
 void NMEAGPS::update()
 {
+  if (firstGGA && firstGLL && firstRMC && !timeIsSet)
+  {
+    setenv("TZ", "GMT0", 1);
+    tzset();
+
+    timeval setTime;
+    setTime.tv_sec = mktime(&this->localtm);
+    setTime.tv_usec = 0;
+    settimeofday(&setTime, NULL);
+
+    flockCfg.setTimeZone();
+    timeIsSet = true;
+    flockLog.addLogLine("GPS", "Initial clock set done\r\n");
+  } 
+
   if (gpsPort.available())
   {
     char c = gpsPort.read();

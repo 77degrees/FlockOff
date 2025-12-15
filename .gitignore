@@ -1,3 +1,4 @@
 *.zip
 .theia/
 venv/
+*.db

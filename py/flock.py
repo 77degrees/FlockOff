@@ -274,26 +274,31 @@ if __name__ == '__main__':
     s = serial.Serial(port = args.port, baudrate = 115200, bytesize = 8, parity = 'N', stopbits = 1, timeout = 1.0)
 
     if args.ls == True:
-        s.write(b'ls \r\n')
-        time.sleep(0.5)
-        print (stripReturn(s.read_all()))
+        s.write(b'ls -d\r\n')
+        s.read_until()
+        time.sleep(1.0)
+        print (s.read_all().decode('ascii'))
         sys.exit(0)
 
     if not args.cat is None:
-        cmd = 'cat {}\r\n'.format(args.cat)
+        cmd = 'cat -d {}\r\n'.format(args.cat)
         s.write(bytes(cmd.encode('utf-8')))
-        time.sleep(1.0)
-        print (stripReturn(s.read_all())[5:])
+        #read firs line (echo of command), and discard
+        tmp = s.read_until().decode('ascii')
+        # read the real thing
+        tmp = s.read_until().decode('ascii')
+        print (tmp)
         sys.exit(0)
 
     raw = ''
 
     if not args.load is None:
-        cmd = 'cat {}\r\n'.format(args.load)
+        cmd = 'cat -d {}\r\n'.format(args.load)
         s.write(bytes(cmd.encode('utf-8')))
-        time.sleep(2.0)
-        raw = stripReturn(s.read_all())[5:]
-        raw = raw[:len(raw) - 5]
+        #read firs line (echo of command), and discard
+        tmp = s.read_until().decode('ascii')
+        # read the real thing
+        raw = s.read_until().decode('ascii')
 
     if len(raw) < 20:
         print ('bad read from file {}'.format(args.load))

@@ -30,6 +30,13 @@ private:
   uint8_t parsInx;
   uint32_t lastMsgOffset;
 
+  bool once;
+  bool loggedFix;
+  bool firstRMC;
+  bool firstGGA;
+  bool firstGLL;
+  bool timeIsSet;
+
   bool dataValid;
   int fixQuality;
   int satelliteCount;

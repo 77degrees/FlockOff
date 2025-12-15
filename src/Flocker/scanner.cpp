@@ -13,6 +13,7 @@
 
 #include "scanner.h"
 #include "flockLog.h"
+#include "flockCfg.h"
 
 #include "globals.h"
 
@@ -154,6 +155,12 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
   const wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buff;
   const wifi_ieee80211_mac_hdr_t *hdr = (wifi_ieee80211_mac_hdr_t *)ppkt->payload;
   
+  // if the signal is below minimum RSSI, just bail now
+  if (ppkt->rx_ctrl.rssi < flockCfg.getMinRSSI())
+  {
+    return;
+  }
+
   // get the length of the packet (minus header stuffs and CRC32);
   size_t pktLen = ppkt->rx_ctrl.sig_len - sizeof(*hdr) - 4; // last 4 is the CRC32
 
@@ -235,6 +242,12 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
 {
   void onResult(const NimBLEAdvertisedDevice* advertisedDevice)
   {
+    // if signal is below minimum RSSI, bail now
+    if (advertisedDevice->getRSSI() < flockCfg.getMinRSSI())
+    {
+      return;
+    }
+
     resetDeviceHolder();
     btDevice.timestamp = millis();
     btDevice.rssi = advertisedDevice->getRSSI();
@@ -565,7 +578,7 @@ void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fnam
   }
 
   Serial.printf(CLI_CYA "Found " CLI_GRN "%d" CLI_CYA " devices:\r\n" CLI_RESET, wifiDevices.size() + bleDevices.size());
-  serializeJsonPretty(sur, Serial);
+  //serializeJsonPretty(sur, Serial);
   Serial.printf("\r\n");
 
   if (fname && strlen(fname))

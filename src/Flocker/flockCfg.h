@@ -23,6 +23,7 @@ public:
   uint8_t getLEDBrightness();
   bool getDebugEnabledState();
   uint8_t getDebugFileCount();
+  int8_t getMinRSSI();
 
   bool newCfgAvailable(uint8_t listenerID);
   bool registerListener(uint8_t& id);
@@ -34,6 +35,7 @@ private:
   void setDebugEnabledState();
   void setDebugFileRollCount();
   bool writeConfig();
+  void setMinRSSI();
   void setNewConfigFlags(bool val);
 
   int readInt(const char* prompt);

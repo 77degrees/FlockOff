@@ -13,6 +13,11 @@ bool MBFS::begin()
   return (true);
 }
 
+void MBFS::format()
+{
+    LittleFS.format();
+}
+
 size_t MBFS::list(std::vector<std::string>& files)
 {
     File root = LittleFS.open("/");

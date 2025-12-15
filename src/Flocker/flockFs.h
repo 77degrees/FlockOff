@@ -14,6 +14,7 @@ public:
   bool begin();
 
   void getInfo(size_t* cap, size_t* used);
+  void format();
 
   size_t list(std::vector<std::string>& files);
   ssize_t readFile(const char* path, uint8_t* buff, size_t len);

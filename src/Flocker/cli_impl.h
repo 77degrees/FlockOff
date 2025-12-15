@@ -24,27 +24,57 @@ const char* helpSurvey = "survey [OPTION]\r\n"
                          "  -j <NOTES>      save results as JSON, with NOTES added for reference\r\n\r\n"
                          "If neither the -b or -w parameter is set, a survey of both will be performed.  If data is saved to file, but the -j parameter is not supplied, the data will be in CSV format.\r\n\r\n";
 
-
 // clear terminal
 void onClear(EmbeddedCli* cli, char* args, void* context);
+const char* helpClear = "clear \r\n"
+                        "Clear the serial console screen\r\n\r\n";
+
 // reset device (close filesystem first)
 void onReset(EmbeddedCli* cli, char* args, void* context);
+const char* helpReset = "reset [OPTIONS]\r\n"
+                        "Reboot the device, optionally performing a 'factory reset'\r\n"
+                        "  --factory  perform a complete initialization on the device.\r\n"
+                        "             All saved data will be lost and default configuration set\r\n\r\n";
+
 // filesystem utils; ls, rm, mv, cp, cat
 void onLs(EmbeddedCli* cli, char* args, void* context);
+const char* helpLs = "ls [OPTIONS]\r\n"
+                     "  -d   'dump' file - no console colors and delay after listing.  Use this option with script automation.\r\n"
+                     "List files in the filesystem.  The device's filesystem is 'flat'; i.e., there are no directories.  Also note there are no parameters - all files are listed along with their size.\r\n\r\n";
+
 void onDel(EmbeddedCli* cli, char* args, void* context);
+const char* helpDel = "rm FILENAME\r\n"
+                      "Delete FILENAME from filesystem.  One file at a time, with no globbing (no * or ? wildcards)\r\n\r\n";
+
 void onMv(EmbeddedCli* cli, char* args, void* context);
+const char* helpMv = "mv OLD_NAME NEW_NAME\r\n"
+                    "Rename a file.\r\n\r\n";
+
 void onCp(EmbeddedCli* cli, char* args, void* context);
+const char* helpCp = "cp ORIGINAL_NAME COPY_NAME\r\n"
+                     "Create a copy of a file in the filesystem.\r\n\r\n";
+
 void onCat(EmbeddedCli* cli, char* args, void* context);
+const char* helpCat = "cat [OPTIONS] FILENAME\r\n"
+                      "List the contents of FILENAME in the console\r\n"
+                      "  -d   'dump' file - no console colors and delay after listing.  Use this option with script automation.\r\n\r\n";
+
 // write test file
 void onWrite(EmbeddedCli* cli, char* args, void* context);
+const char* helpWrite = "write FILENAME DATA\r\n"
+                        "Create FILENAME in the filesystem and write arbitrary text DATA to it.\r\n\r\n";
+
 // get system status
 void onStatus(EmbeddedCli* cli, char* args, void* context);
+const char* helpStatus = "status\r\n"
+                         "Display system status which includes GPS status and location, filesytem capacity and usage, internal and PSRAM heap capacity and usage, and current local time and timezone.\r\n\r\n";
+
 // interactive config stuff
 void onConfig(EmbeddedCli* cli, char* args, void* context);
 const char* helpConfig = "config [OPTION]\r\n"
                          "Set or display configuration parameters\r\n\r\n"
                          "  -l      display current configuration (dumps the raw JSON in pretty-print format)\r\n\r\n"
-                         "If -l not given, show system configuration menu.";
+                         "If -l not given, show system configuration menu.\r\n\r\n";
 
 /*******************************************************
 * Binding struct for each command:
@@ -59,15 +89,15 @@ const char* helpConfig = "config [OPTION]\r\n"
 *******************************************************/
 const struct CliCommandBinding bindings[] = {
   {"survey", "Perform Wifi survey", helpSurvey, true, nullptr, onSurvey},
-  {"clear", "Clear the console", "Clear the serial console screen", false, nullptr, onClear},
-  {"reset", "Reboot the device", "Closes filesystems and resets board", false, nullptr, onReset},
-  {"ls", "List files", "List files in filesystem", false, nullptr, onLs},
-  {"rm", "Delete file", "<filename> to delete", true, nullptr, onDel},
-  {"write", "Write test file", "-f <filename> -d <string to write to file>", true, nullptr, onWrite},
-  {"mv", "Rename file", "<original filename> <new filename>", true, nullptr, onMv},
-  {"cp", "Copy file", "<source filename> <destination filename>", true, nullptr, onCp},
-  {"cat", "Cat file", "<filename> file to read", true, nullptr,  onCat},
-  {"status", "Get system status", "Get system status", false, nullptr, onStatus},
+  {"clear", "Clear the console", helpClear, false, nullptr, onClear},
+  {"reset", "Reboot the device", helpReset, true, nullptr, onReset},
+  {"ls", "List files", helpLs, true, nullptr, onLs},
+  {"rm", "Delete file", helpDel, true, nullptr, onDel},
+  {"write", "Write test file", helpWrite, true, nullptr, onWrite},
+  {"mv", "Rename file", helpMv, true, nullptr, onMv},
+  {"cp", "Copy file", helpCp, true, nullptr, onCp},
+  {"cat", "Cat file", helpCat, true, nullptr,  onCat},
+  {"status", "Get system status", helpStatus, false, nullptr, onStatus},
   {"config", "Get/Set config values", helpConfig, true, nullptr, onConfig}};
 
 const size_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
@@ -283,13 +313,34 @@ void onLs(EmbeddedCli *cli, char *args, void *context)
 {
   std::vector<std::string>files;
   std::vector<std::string>::const_iterator filesCit;
+  bool dump = false;
   size_t count = flockfs.list(files);
 
-  flockLog.addLogLine("CLI", "onLs()\r\n");
+  if (embeddedCliGetTokenCount(args) == 1)
+  {
+    if (!strcmp(embeddedCliGetToken(args, 1), "-d"))
+    {
+      dump = true;
+    }
+  }
 
+  flockLog.addLogLine("CLI", "onLs(%s)\r\n", dump ? "dump" : "");
+  
   for (filesCit = files.begin(); filesCit != files.end(); ++filesCit)
   {
-    Serial.printf(CLI_GRN "\t%6d  %s\r\n" CLI_RESET, flockfs.getFileSize(filesCit->c_str()), filesCit->c_str());
+    if (!dump)
+    {
+      Serial.printf(CLI_GRN "\t%6d  %s\r\n" CLI_RESET, flockfs.getFileSize(filesCit->c_str()), filesCit->c_str());
+    }
+    else
+    {
+      Serial.printf("%s\r\n", filesCit->c_str());
+    }
+  }
+
+  if (dump)
+  {
+    delay(2000);
   }
 }
 
@@ -325,7 +376,7 @@ void onWrite(EmbeddedCli *cli, char *args, void *context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename or data. " CLI_RESET " " CLI_YEL "Usage: write <filename> <string data to write>\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename or data. " CLI_RESET " " CLI_YEL "Usage: write FILENAME DATA\r\n" CLI_RESET);
     flockLog.addLogLine("CLI", "onWrite() bad invocation\r\n");
   }
 }
@@ -357,7 +408,7 @@ void onDel(EmbeddedCli* cli, char* args, void* context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename. " CLI_YEL "Usage: rm <filename>\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename. " CLI_YEL "Usage: rm FILENAME\r\n" CLI_RESET);
     flockLog.addLogLine("CLI", "onDel() invocation error\r\n");
   }
 }
@@ -391,7 +442,7 @@ void onMv(EmbeddedCli* cli, char* args, void* context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: rm <old file name> <new file name>\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: MV OLDNAME NEWNAME\r\n" CLI_RESET);
     flockLog.addLogLine("CLI", "onMv() invocation error\r\n");
   }
 }
@@ -425,7 +476,7 @@ void onCp(EmbeddedCli* cli, char* args, void* context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: cp <source file name> <destination file name>\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename(s). " CLI_YEL "Usage: cp FROM TO\r\n" CLI_RESET);
     flockLog.addLogLine("CLI", "onCp() invocation error\r\n");
   }
 }
@@ -441,14 +492,26 @@ void onCp(EmbeddedCli* cli, char* args, void* context)
 ******************************************************/
 void onCat(EmbeddedCli *cli, char *args, void *context)
 {
-  if (embeddedCliGetTokenCount(args) == 1)
+  const char* fname;
+  bool dump = false;
+  int tokens = embeddedCliGetTokenCount(args);
+
+  if (tokens == 1 || tokens == 2)
   {
-    const char* fname = embeddedCliGetToken(args, 1);
+    for (int token = 1; token <= tokens; ++token)
+    if (!strcmp(embeddedCliGetToken(args, token), "-d"))
+    {
+      dump = true;
+    }
+    else
+    {
+      fname = embeddedCliGetToken(args, token);
+    }
 
     ssize_t fileLen = flockfs.getFileSize(fname);
     if (fileLen == -1)
     {
-      Serial.printf(CLI_BOLD_RED "File not found.\r\n" CLI_RESET, fname);
+      Serial.printf(CLI_BOLD_RED "File %s not found.\r\n" CLI_RESET, fname);
       return;
     }
 
@@ -458,9 +521,10 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
     if (buf)
     {
       size_t read = flockfs.readFile(fname, (uint8_t*)buf, fileLen);
-      Serial.printf(CLI_CYA);
+
+      if (!dump)      Serial.printf(CLI_CYA);
       Serial.printf((char*)buf);
-      Serial.printf(CLI_RESET "\r\n");
+      if (!dump)      Serial.printf(CLI_RESET "\r\n");
 
       free(buf);
       flockLog.addLogLine("CLI", "onCat() listed contents of %s (%d bytes)\r\n", fname, read);
@@ -473,8 +537,14 @@ void onCat(EmbeddedCli *cli, char *args, void *context)
   }
   else
   {
-    Serial.printf(CLI_BOLD_RED "Missing filename." CLI_YEL " Usage: cat <filename>\r\n" CLI_RESET);
+    Serial.printf(CLI_BOLD_RED "Missing filename." CLI_YEL " Usage: cat [-d] FILENAME\r\n" CLI_RESET);
     flockLog.addLogLine("CLI", "onMv() invocation error\r\n");
+  }
+
+  if (dump)
+  {
+    delay(3000);
+    Serial.printf("\r\n");
   }
 }
 
@@ -492,6 +562,15 @@ void onReset(EmbeddedCli *cli, char *args, void *context)
 {
   flockLog.addLogLine("CLI", "onReset() shutting down!\r\n");
   flockLog.flushNow();
+
+  if (embeddedCliGetTokenCount(args) == 1)
+  {
+    if (!strcmp(embeddedCliGetToken(args, 1), "--factory"))
+    {
+      flockfs.format();
+      delay(500);
+    }
+  }
   LittleFS.end();
   delay(1000);
 
