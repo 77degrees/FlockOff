@@ -129,6 +129,7 @@ class sq3db():
 
         self._createTables()
         self._loadYaml()
+        self._loadMac()
 
     def _createTables(self) -> bool:
         try:
@@ -224,6 +225,17 @@ class sq3db():
         except sqlite3.OperationalError as ex:
             print (ex)
 
+        try:
+            self._cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS mac_vendor (
+                        macInx INTEGER PRIMARY KEY AUTOINCREMENT,
+                        prefix TEXT NOT NULL,
+                        vendorName TEXT NOT NULL
+                    );
+            """)
+        except sqlite3.OperationalError as ex:
+            print (ex)
+
         return (True)
 
     def _loadYaml(self) ->None:
@@ -246,6 +258,7 @@ class sq3db():
 
         # make sure we only load this table once.
         if totalUUIDCount != (serviceCnt + memberCnt + serviceClassCnt):
+            print ('Reloading YAML data from Bluetooth assigned numbers')
             self._cursor.execute('DELETE FROM bluetooth_uuids')
             for service in services:
                 qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}","{}");'.format(
@@ -267,6 +280,44 @@ class sq3db():
 
                 self._cursor.execute(qstring)
             self.doCommit()
+        else:
+            print ('Skipping YAML data from Bluetooth assigned numbers')
+
+    def _loadMac(self) ->None:
+        f = open('./mac-vendors-export.json', 'r')
+        macJson = json.load(f)
+        f.close()
+
+        totalVendors = int(self._cursor.execute('select count(1) from mac_vendor').fetchone()[0])
+
+        count = 0
+
+        if totalVendors != len(macJson):
+            print ('Reloading mac-vendors-export.json')
+            self._cursor.execute('DELETE FROM mac_vendor;')
+
+            for macItem in macJson:
+                qstring = 'INSERT INTO mac_vendor (prefix, vendorName) values ("{}","{}")'.format(
+                        macItem['macPrefix'], macItem['vendorName'])
+                
+                try:
+                    self._cursor.execute(qstring)
+                except sqlite3.OperationalError as ex:
+                    print ('Error {} on item {}'.format(ex, macItem))
+                    
+                    qstring = 'INSERT INTO mac_vendor (prefix, vendorName) values ("{}","{}")'.format(
+                        macItem['macPrefix'], 'Error in vendor name')
+                    
+                    self._cursor.execute(qstring)
+                
+                count += 1
+                if count >= 1000:
+                    self.doCommit()
+                    count = 0
+
+            self.doCommit()
+        else:
+            print ('Skipping reload mac-vendors-export.json')
 
     def doCommit(self) ->None:
         self._dbConnection.commit()
