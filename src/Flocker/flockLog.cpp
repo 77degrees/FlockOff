@@ -66,7 +66,7 @@ void FLOGGER::update()
 {
   if ((millis() - this->updateOffset) > this->updateInterval)
   {
-    this->updateOffset - millis();
+    this->updateOffset = millis();
 
     if (flockCfg.getDebugEnabledState())
     {

@@ -2,4 +2,5 @@
 .theia/
 venv/
 *.db
+*.bk
 dataGrip/

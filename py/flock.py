@@ -6,6 +6,7 @@ import sqlite3
 import serial
 import time
 import sys
+import yaml
 
 class surveyJson():
     def __init__(self, raw:str) -> None:
@@ -123,8 +124,11 @@ class sq3db():
     def __init__(self, fileName: str) -> None:
         self._dbConnection = sqlite3.connect(fileName)
         self._cursor = self._dbConnection.cursor()
+        self._membersExists = False
+        self._servicesExists = False
 
         self._createTables()
+        self._loadYaml()
 
     def _createTables(self) -> bool:
         try:
@@ -182,7 +186,7 @@ class sq3db():
                     CREATE TABLE IF NOT EXISTS uuid16 (
                         uuidInx INTEGER PRIMARY KEY AUTOINCREMENT,
                         btInx INTEGER NOT NULL,
-                        uuid16 INTEGER NULL,\
+                        uuid16 INTEGER NULL,
                         FOREIGN KEY (btInx)
                             REFERENCES btle (btInx)
                                 ON DELETE CASCADE
@@ -207,7 +211,62 @@ class sq3db():
         except sqlite3.OperationalError as ex:
             print (ex)
 
+        try:
+            self._cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS bluetooth_uuids (
+                        svcInx INTEGER PRIMARY KEY AUTOINCREMENT,
+                        uuidHex TEXT NOT NULL,
+                        uuidDec INT NOT NULL,
+                        name TEXT NOT NULL,
+                        id TEXT NOT NULL
+                    );
+            """)
+        except sqlite3.OperationalError as ex:
+            print (ex)
+
         return (True)
+
+    def _loadYaml(self) ->None:
+        yamlFile = open('./service_uuids.yaml', 'r')
+        services = (yaml.load(yamlFile, Loader = yaml.SafeLoader))['uuids']
+        yamlFile.close()
+        serviceCnt = len(services)
+
+        yamlFile = open('./member_uuids.yaml', 'r')
+        members = (yaml.load(yamlFile, Loader = yaml.SafeLoader))['uuids']
+        yamlFile.close()
+        memberCnt = len(members)
+
+        yamlFile = open('./service_class_uuids.yaml', 'r')
+        serviceClasses = (yaml.load(yamlFile, Loader = yaml.SafeLoader))['uuids']
+        yamlFile.close()
+        serviceClassCnt = len(serviceClasses)
+
+        totalUUIDCount = int(self._cursor.execute('select count(1) from bluetooth_uuids').fetchone()[0])
+
+        # make sure we only load this table once.
+        if totalUUIDCount != (serviceCnt + memberCnt + serviceClassCnt):
+            self._cursor.execute('DELETE FROM bluetooth_uuids')
+            for service in services:
+                qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}","{}");'.format(
+                    hex(int(service['uuid'])), service['uuid'], service['name'], service['id'])
+
+                self._cursor.execute(qstring)
+            self.doCommit()
+
+            for member in members:
+                qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}","{}");'.format(
+                    hex(int(member['uuid'])), member['uuid'], member['name'], member['name'])
+
+                self._cursor.execute(qstring)
+            self.doCommit()
+
+            for serviceClass in serviceClasses:
+                qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}", "{}");'.format(
+                    hex(int(serviceClass['uuid'])), serviceClass['uuid'], serviceClass['name'], serviceClass['id'])
+
+                self._cursor.execute(qstring)
+            self.doCommit()
 
     def doCommit(self) ->None:
         self._dbConnection.commit()
