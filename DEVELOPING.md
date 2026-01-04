@@ -34,3 +34,12 @@ After choosing the board, select `Tools` from the Arduino menu.  The bottom half
 
 ## Test compile 
 To test the installation and configuration, try to build the project.  From the Arduino menu, select `Sketch >> Verify/Compile` .  The `Output` window on the bottom of the IDE will show `Compiling sketch...` along with a progress bar.  This will take several minutes the first time, just let it run.
+
+Once complete, the `Output` window should display something like:
+```
+Sketch uses 1205591 bytes (7%) of program storage space. Maximum is 16777216 bytes.
+Global variables use 52972 bytes (16%) of dynamic memory, leaving 274708 bytes for local variables. Maximum is 327680 bytes.
+```
+
+#### Viewing full build Output
+If you're interested, use the Arduino preferences menu and enable `verbose output`
