@@ -1,15 +1,17 @@
 #!/usr/bin/python3
 
-import json
 import argparse
+import json
 import sqlite3
-import serial
-import time
 import sys
+import time
+
+import serial
 import yaml
 
-class surveyJson():
-    def __init__(self, raw:str) -> None:
+
+class surveyJson:
+    def __init__(self, raw: str) -> None:
         self._json = None
         self._wifiInx = 0
         self._wifiCount = 0
@@ -18,109 +20,114 @@ class surveyJson():
 
         self._loadSurvey(raw)
 
-    def _loadSurvey(self, data:str) -> bool:
+    def _loadSurvey(self, data: str) -> bool:
         self._json = json.loads(data)
 
-        self._wifiCount = len(self._json['WiFiDevices'])
-        self._bleCount = len(self._json['BLEDevices'])
-        return (True)
+        self._wifiCount = len(self._json["WiFiDevices"])
+        self._bleCount = len(self._json["BLEDevices"])
+        return True
 
-    def getWiFiDevCount(self) ->int:
-        return (self._wifiCount)
+    def getWiFiDevCount(self) -> int:
+        return self._wifiCount
 
-    def getBLEDevCount(self) ->int:
-        return (self._bleCount)
+    def getBLEDevCount(self) -> int:
+        return self._bleCount
 
-    def getItem(self, key:str) -> None|str|int|float:
+    def getItem(self, key: str):
         try:
-            return (self._json[key])
+            return self._json[key]
         except KeyError:
-            return (None)
+            return None
 
-    def getHeader(self) -> None|tuple[str,str,float,float,int]:
-        notes = self.getItem('SurveyNotes')
-        dateTime = self.getItem('DateTime')
-        longitude = self.getItem('LocationLongLat')[1]
-        lattitude = self.getItem('LocationLongLat')[0]
-        satCount = self.getItem('SatelliteCount')
+    def getHeader(self):
+        notes = self.getItem("SurveyNotes")
+        dateTime = self.getItem("DateTime")
+        longitude = self.getItem("LocationLongLat")[1]
+        lattitude = self.getItem("LocationLongLat")[0]
+        satCount = self.getItem("SatelliteCount")
 
-        if notes == None or dateTime == None or longitude == None or lattitude == None or satCount == None:
+        if (
+            notes == None
+            or dateTime == None
+            or longitude == None
+            or lattitude == None
+            or satCount == None
+        ):
             return None
 
         else:
-            return(notes, dateTime, longitude, lattitude, satCount)
+            return (notes, dateTime, longitude, lattitude, satCount)
 
-    def getNextWifiDevice(self) -> None|tuple[str,str,str,int,int]:
+    def getNextWifiDevice(self):
         if self._wifiInx >= self._wifiCount:
-            return (None)
+            return None
 
         try:
-            type = self._json['WiFiDevices'][self._wifiInx]['Subtype']
-            ssid = self._json['WiFiDevices'][self._wifiInx]['SSID']
-            bssid = self._json['WiFiDevices'][self._wifiInx]['BSSID']
-            channel = self._json['WiFiDevices'][self._wifiInx]['Channel']
-            rssi = self._json['WiFiDevices'][self._wifiInx]['RSSSI']
+            type = self._json["WiFiDevices"][self._wifiInx]["Subtype"]
+            ssid = self._json["WiFiDevices"][self._wifiInx]["SSID"]
+            bssid = self._json["WiFiDevices"][self._wifiInx]["BSSID"]
+            channel = self._json["WiFiDevices"][self._wifiInx]["Channel"]
+            rssi = self._json["WiFiDevices"][self._wifiInx]["RSSSI"]
         except KeyError:
-            return (None)
+            return None
 
         self._wifiInx = self._wifiInx + 1
 
-        return ((type, ssid, bssid, channel, rssi))
+        return (type, ssid, bssid, channel, rssi)
 
-    def getWifiDevice(self, inx:int) -> None|tuple[str,str,str,int,int]:
+    def getWifiDevice(self, inx: int):
         if inx >= self._wifiCount:
-            return (None)
+            return None
 
         try:
-            type = self._json['WiFiDevices'][inx]['Subtype']
-            ssid = self._json['WiFiDevices'][inx]['SSID']
-            bssid = self._json['WiFiDevices'][inx]['BSSID']
-            channel = self._json['WiFiDevices'][inx]['Channel']
-            rssi = self._json['WiFiDevices'][inx]['RSSSI']
+            type = self._json["WiFiDevices"][inx]["Subtype"]
+            ssid = self._json["WiFiDevices"][inx]["SSID"]
+            bssid = self._json["WiFiDevices"][inx]["BSSID"]
+            channel = self._json["WiFiDevices"][inx]["Channel"]
+            rssi = self._json["WiFiDevices"][inx]["RSSSI"]
         except KeyError:
-            return (None)
+            return None
 
+        return (type, ssid, bssid, channel, rssi)
 
-        return ((type, ssid, bssid, channel, rssi))
-
-    def getNextBTDevice(self) -> None|tuple[str,str,int,list,list]:
+    def getNextBTDevice(self):
         if self._bleInx >= self._bleCount:
-            return (None)
+            return None
 
         try:
-            name = self._json['BLEDevices'][self._bleInx]['Name']
-            mac = self._json['BLEDevices'][self._bleInx]['MAC']
-            rssi = self._json['BLEDevices'][self._bleInx]['RSSI']
+            name = self._json["BLEDevices"][self._bleInx]["Name"]
+            mac = self._json["BLEDevices"][self._bleInx]["MAC"]
+            rssi = self._json["BLEDevices"][self._bleInx]["RSSI"]
 
-            uuid16 = self._json['BLEDevices'][self._bleInx]['UUID16bit']
-            uuid128 = self._json['BLEDevices'][self._bleInx]['UUID128bit']
+            uuid16 = self._json["BLEDevices"][self._bleInx]["UUID16bit"]
+            uuid128 = self._json["BLEDevices"][self._bleInx]["UUID128bit"]
         except KeyError:
-            return (None)
+            return None
 
         self._bleInx = self._bleInx + 1
 
-        return ((name, mac, rssi, uuid16, uuid128))
+        return (name, mac, rssi, uuid16, uuid128)
 
-    def getBTDevice(self, inx:int) -> None|tuple[str,str,int,list,list]:
+    def getBTDevice(self, inx: int):
         if self.inx >= self._bleInx:
-            return (None)
+            return None
 
         try:
-            name = self._json['BLEDevices'][inx]['name']
-            mac = self._json['BLEDevices'][inx]['mac']
-            rssi = self._json['BLEDevices'][inx]['rssi']
+            name = self._json["BLEDevices"][inx]["name"]
+            mac = self._json["BLEDevices"][inx]["mac"]
+            rssi = self._json["BLEDevices"][inx]["rssi"]
 
-            uuid16 = self._json['BLEDevices'][inx]['UUID16bit']
-            uuid128 = self._json['BLEDevices'][inx]['UUID128bit']
+            uuid16 = self._json["BLEDevices"][inx]["UUID16bit"]
+            uuid128 = self._json["BLEDevices"][inx]["UUID128bit"]
         except KeyError:
-            return (None)
+            return None
 
         self._bleInx = self._bleInx + 1
 
-        return ((name, mac, rssi, uuid16, uuid128))
+        return (name, mac, rssi, uuid16, uuid128)
 
 
-class sq3db():
+class sq3db:
     def __init__(self, fileName: str) -> None:
         self._dbConnection = sqlite3.connect(fileName)
         self._cursor = self._dbConnection.cursor()
@@ -144,7 +151,7 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
         try:
             self._cursor.execute("""
@@ -163,7 +170,7 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
         try:
             self._cursor.execute("""
@@ -180,7 +187,7 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
         try:
             self._cursor.execute("""
@@ -195,7 +202,7 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
         try:
             self._cursor.execute("""
@@ -210,7 +217,7 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
         try:
             self._cursor.execute("""
@@ -223,7 +230,7 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
         try:
             self._cursor.execute("""
@@ -234,82 +241,100 @@ class sq3db():
                     );
             """)
         except sqlite3.OperationalError as ex:
-            print (ex)
+            print(ex)
 
-        return (True)
+        return True
 
-    def _loadYaml(self) ->None:
-        yamlFile = open('./service_uuids.yaml', 'r')
-        services = (yaml.load(yamlFile, Loader = yaml.SafeLoader))['uuids']
+    def _loadYaml(self) -> None:
+        yamlFile = open("./service_uuids.yaml", "r")
+        services = (yaml.load(yamlFile, Loader=yaml.SafeLoader))["uuids"]
         yamlFile.close()
         serviceCnt = len(services)
 
-        yamlFile = open('./member_uuids.yaml', 'r')
-        members = (yaml.load(yamlFile, Loader = yaml.SafeLoader))['uuids']
+        yamlFile = open("./member_uuids.yaml", "r")
+        members = (yaml.load(yamlFile, Loader=yaml.SafeLoader))["uuids"]
         yamlFile.close()
         memberCnt = len(members)
 
-        yamlFile = open('./service_class_uuids.yaml', 'r')
-        serviceClasses = (yaml.load(yamlFile, Loader = yaml.SafeLoader))['uuids']
+        yamlFile = open("./service_class_uuids.yaml", "r")
+        serviceClasses = (yaml.load(yamlFile, Loader=yaml.SafeLoader))["uuids"]
         yamlFile.close()
         serviceClassCnt = len(serviceClasses)
 
-        totalUUIDCount = int(self._cursor.execute('select count(1) from bluetooth_uuids').fetchone()[0])
+        totalUUIDCount = int(
+            self._cursor.execute("select count(1) from bluetooth_uuids").fetchone()[0]
+        )
 
         # make sure we only load this table once.
         if totalUUIDCount != (serviceCnt + memberCnt + serviceClassCnt):
-            print ('Reloading YAML data from Bluetooth assigned numbers')
-            self._cursor.execute('DELETE FROM bluetooth_uuids')
+            print("Reloading YAML data from Bluetooth assigned numbers")
+            self._cursor.execute("DELETE FROM bluetooth_uuids")
             for service in services:
                 qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}","{}");'.format(
-                    hex(int(service['uuid'])), service['uuid'], service['name'], service['id'])
+                    hex(int(service["uuid"])),
+                    service["uuid"],
+                    service["name"],
+                    service["id"],
+                )
 
                 self._cursor.execute(qstring)
             self.doCommit()
 
             for member in members:
                 qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}","{}");'.format(
-                    hex(int(member['uuid'])), member['uuid'], member['name'], member['name'])
+                    hex(int(member["uuid"])),
+                    member["uuid"],
+                    member["name"],
+                    member["name"],
+                )
 
                 self._cursor.execute(qstring)
             self.doCommit()
 
             for serviceClass in serviceClasses:
                 qstring = 'INSERT INTO bluetooth_uuids (uuidHex, uuidDec, name, id) values ("{}",{},"{}", "{}");'.format(
-                    hex(int(serviceClass['uuid'])), serviceClass['uuid'], serviceClass['name'], serviceClass['id'])
+                    hex(int(serviceClass["uuid"])),
+                    serviceClass["uuid"],
+                    serviceClass["name"],
+                    serviceClass["id"],
+                )
 
                 self._cursor.execute(qstring)
             self.doCommit()
         else:
-            print ('Skipping YAML data from Bluetooth assigned numbers')
+            print("Skipping YAML data from Bluetooth assigned numbers")
 
-    def _loadMac(self) ->None:
-        f = open('./mac-vendors-export.json', 'r')
+    def _loadMac(self) -> None:
+        f = open("./mac-vendors-export.json", "r")
         macJson = json.load(f)
         f.close()
 
-        totalVendors = int(self._cursor.execute('select count(1) from mac_vendor').fetchone()[0])
+        totalVendors = int(
+            self._cursor.execute("select count(1) from mac_vendor").fetchone()[0]
+        )
 
         count = 0
 
         if totalVendors != len(macJson):
-            print ('Reloading mac-vendors-export.json')
-            self._cursor.execute('DELETE FROM mac_vendor;')
+            print("Reloading mac-vendors-export.json")
+            self._cursor.execute("DELETE FROM mac_vendor;")
 
             for macItem in macJson:
                 qstring = 'INSERT INTO mac_vendor (prefix, vendorName) values ("{}","{}")'.format(
-                        macItem['macPrefix'], macItem['vendorName'])
-                
+                    macItem["macPrefix"], macItem["vendorName"]
+                )
+
                 try:
                     self._cursor.execute(qstring)
                 except sqlite3.OperationalError as ex:
-                    print ('Error {} on item {}'.format(ex, macItem))
-                    
+                    print("Error {} on item {}".format(ex, macItem))
+
                     qstring = 'INSERT INTO mac_vendor (prefix, vendorName) values ("{}","{}")'.format(
-                        macItem['macPrefix'], 'Error in vendor name')
-                    
+                        macItem["macPrefix"], "Error in vendor name"
+                    )
+
                     self._cursor.execute(qstring)
-                
+
                 count += 1
                 if count >= 1000:
                     self.doCommit()
@@ -317,101 +342,129 @@ class sq3db():
 
             self.doCommit()
         else:
-            print ('Skipping reload mac-vendors-export.json')
+            print("Skipping reload mac-vendors-export.json")
 
-    def doCommit(self) ->None:
+    def doCommit(self) -> None:
         self._dbConnection.commit()
 
-    def insertSurveyHeader(self, header:tuple) ->None|int:
+    def insertSurveyHeader(self, header: tuple):
         qstring = 'INSERT INTO surveys (notes, dateTime, longitude, lattitude, satCount) values ("{}","{}",{},{},{});'.format(
-                    header[0], header[1], header[2], header[3], header[4])
+            header[0], header[1], header[2], header[3], header[4]
+        )
 
         self._cursor.execute(qstring)
         self._dbConnection.commit()
 
-        return (self._cursor.execute('select seq from sqlite_sequence where name = "surveys"').fetchone()[0])
+        return self._cursor.execute(
+            'select seq from sqlite_sequence where name = "surveys"'
+        ).fetchone()[0]
 
-    def insertWiFiDevice(self, pk:int, wifi:tuple, delayCommit:bool=False) ->None:
+    def insertWiFiDevice(self, pk: int, wifi: tuple, delayCommit: bool = False) -> None:
         qstring = 'INSERT INTO wifi (surveyInx, type, ssid, bssid, channel, rssi) values ({},"{}","{}","{}",{},{});'.format(
-                    pk, wifi[0], wifi[1], wifi[2], wifi[3], wifi[4])
+            pk, wifi[0], wifi[1], wifi[2], wifi[3], wifi[4]
+        )
 
         self._cursor.execute(qstring)
 
         if not delayCommit == True:
             self._dbConnection.commit()
 
-    def insertBLEDevice(self, pk:int, bt:tuple, delayCommit:bool=False) ->None:
+    def insertBLEDevice(self, pk: int, bt: tuple, delayCommit: bool = False) -> None:
         btFK = 0
         qstring = 'INSERT INTO btle (surveyInx, name, mac, rssi) values ({},"{}","{}",{});'.format(
-                    pk, bt[0], bt[1], bt[2])
+            pk, bt[0], bt[1], bt[2]
+        )
 
         self._cursor.execute(qstring)
 
         if not len(bt[3]) == 0 or not len(bt[4]) == 0:
             self._dbConnection.commit
-            btFK = self._cursor.execute('select seq from sqlite_sequence where name = "btle"').fetchone()[0]
+            btFK = self._cursor.execute(
+                'select seq from sqlite_sequence where name = "btle"'
+            ).fetchone()[0]
 
             for uuid16 in bt[3]:
-                qstring = 'INSERT INTO uuid16 (btInx, uuid16) values ({},{})'.format(btFK, uuid16)
+                qstring = "INSERT INTO uuid16 (btInx, uuid16) values ({},{})".format(
+                    btFK, uuid16
+                )
                 self._cursor.execute(qstring)
 
             for uuid16 in bt[4]:
-                qstring = 'INSERT INTO uuid16 (btInx, uuid16) values ({},{})'.format(btFK, uuid16)
+                qstring = "INSERT INTO uuid16 (btInx, uuid16) values ({},{})".format(
+                    btFK, uuid16
+                )
                 self._cursor.execute(qstring)
 
         if not delayCommit == True:
             self._dbConnection.commit()
 
 
+def stripReturn(b: bytes) -> str:
+    b = b.decode("utf-8")
+    first = b.find("\n") + 1
+    second = b.rfind("\n")
+    return b[first:second]
 
-def stripReturn(b:bytes) ->str:
-    b = b.decode('utf-8')
-    first = b.find('\n') + 1
-    second = b.rfind('\n')
-    return (b[first:second])
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--port', dest='port', required=True, help='Flocker serial port')
-    parser.add_argument('--dir', dest='ls', action='store_true', help="list files")
-    parser.add_argument('--cat', dest='cat', required=False, type=str, default=None, help='file to cat')
-    parser.add_argument('--load', dest='load', required=False, type=str, default=None, help='file to load')
-    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='Extra output')
-    parser.add_argument('--dbfile', dest='dbfile', required=True, type=str, help='Sqlite3 DB filename')
+    parser.add_argument(
+        "-p", "--port", dest="port", required=True, help="Flocker serial port"
+    )
+    parser.add_argument("--dir", dest="ls", action="store_true", help="list files")
+    parser.add_argument(
+        "--cat", dest="cat", required=False, type=str, default=None, help="file to cat"
+    )
+    parser.add_argument(
+        "--load",
+        dest="load",
+        required=False,
+        type=str,
+        default=None,
+        help="file to load",
+    )
+    parser.add_argument(
+        "-v", "--verbose", dest="verbose", action="store_true", help="Extra output"
+    )
+    parser.add_argument(
+        "--dbfile", dest="dbfile", required=True, type=str, help="Sqlite3 DB filename"
+    )
     args = parser.parse_args()
 
     # start with a connection to the device
-    s = serial.Serial(port = args.port, baudrate = 115200, bytesize = 8, parity = 'N', stopbits = 1, timeout = 1.0)
+    s = serial.Serial(
+        port=args.port, baudrate=115200, bytesize=8, parity="N", stopbits=1, timeout=1.0
+    )
 
     if args.ls == True:
-        s.write(b'ls -d\r\n')
+        s.write(b"ls -d\r\n")
         s.read_until()
         time.sleep(1.0)
-        print (s.read_all().decode('ascii'))
+        print(s.read_all().decode("utf-8"))
         sys.exit(0)
 
     if not args.cat is None:
-        cmd = 'cat -d {}\r\n'.format(args.cat)
-        s.write(bytes(cmd.encode('utf-8')))
-        #read firs line (echo of command), and discard
-        tmp = s.read_until().decode('ascii')
+        cmd = "cat -d {}\r\n".format(args.cat)
+        s.write(bytes(cmd.encode("utf-8")))
+        # read firs line (echo of command), and discard
+        tmp = s.read_until().decode("utf-8")
         # read the real thing
-        tmp = s.read_until().decode('ascii')
-        print (tmp)
+        tmp = s.read_until().decode("utf-8")
+        print(tmp)
         sys.exit(0)
 
-    raw = ''
+    raw = ""
 
     if not args.load is None:
-        cmd = 'cat -d {}\r\n'.format(args.load)
-        s.write(bytes(cmd.encode('utf-8')))
-        #read firs line (echo of command), and discard
-        tmp = s.read_until().decode('ascii')
+        cmd = "cat -d {}\r\n".format(args.load)
+        s.write(bytes(cmd.encode("utf-8")))
+        # read firs line (echo of command), and discard
+        tmp = s.read_until().decode("utf-8")
         # read the real thing
-        raw = s.read_until().decode('ascii')
+        raw = s.read_until().decode("utf-8")
 
     if len(raw) < 20:
-        print ('bad read from file {}'.format(args.load))
+        print("bad read from file {}".format(args.load))
         sys.exit(1)
 
     surv = surveyJson(raw)
@@ -439,5 +492,8 @@ if __name__ == '__main__':
 
         db.doCommit()
 
-        print ('Loaded {} WiFi devices, {} BTLE devices from survey "{}" at {}'.format(
-                wcount, bcount, surv.getItem('SurveyNotes'), surv.getItem('DateTime')))
+        print(
+            'Loaded {} WiFi devices, {} BTLE devices from survey "{}" at {}'.format(
+                wcount, bcount, surv.getItem("SurveyNotes"), surv.getItem("DateTime")
+            )
+        )
