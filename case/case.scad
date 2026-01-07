@@ -1,7 +1,7 @@
 
 BOARDW = 35;
 BOARDL = 74;
-BOARDH = 2;
+BOARDH = 1.65;
    
 
 module pcb(x, y, z)
@@ -175,19 +175,161 @@ module bottom(width, length, height)
           cube([30, 13, 13], true);
           translate([width / 2, 0, height / 2 + 5])
           cube([30, 13, 13], true);
-          
-          translate([width / 2 - 7, -8, height / 2 - 8])
-          cube([6, 16, 20], false);
       }
-      
+      color([.5, 0, .5])
+      {
+          translate([width / 2 - 7, -8, height / 2 - 8])
+          cube([6, 17, 20], false);
+          
+          translate([width / 2 - 11, 5, height / 2 - 1])
+          cube([4, 10, 6], false);
+        }
     }
-   
- 
-    // antenna
+}
+
+
+module top(width, length, height, top)
+{
+    standoffHeight = 10 - (BOARDH / 2);
+    
+    difference()
+    {
+        color([1, .8, 0])
+        {
+            // main top body
+            translate([0, 0, top + height / 2])
+            cube([width, length, height], true);
+            
+            // antenna hoder
+            translate([width / 2 - 5, -6.5, top - 3])
+            cube([5, 13, 3], false);
+             
+            translate([-5 - BOARDL / 2 + 3.5, 0 - BOARDW / 2 + 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+            cube([7, 7, standoffHeight], true);
+            
+            translate([-5 + BOARDL / 2 - 3.5, 0 - BOARDW / 2 + 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+            //cube([5, 5, standoffHeight], true);
+            cylinder(h=standoffHeight, d=4, center=true, $fn=360);
+            translate([-5 + BOARDL / 2 - 3.5, 0 - BOARDW / 2 + 3.5, 10 + (BOARDH / 2) + standoffHeight / 2 + 4])
+            //cube([5, 5, standoffHeight], true);
+            cylinder(h=standoffHeight - 2, d=7, center=true, $fn=360);
+            
+            translate([-5 + BOARDL / 2 - 3.5, 0 + BOARDW / 2 - 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+            //cube([5, 5, standoffHeight], true);
+            cylinder(h=standoffHeight, d=4, center=true, $fn=360);
+            translate([-5 + BOARDL / 2 - 3.5, 0 + BOARDW / 2 - 3.5, 10 + (BOARDH / 2) + standoffHeight / 2 + 4])
+            //cube([5, 5, standoffHeight], true);
+            cylinder(h=standoffHeight - 2, d=7, center=true, $fn=360);
+            
+            translate([-5 - BOARDL / 2 + 3.5, 0 + BOARDW / 2 - 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+            cube([7, 7, standoffHeight], true);
+        }
+        
+        // LED
+        color ([1, .8, 0])
+        {
+          translate([-5 - 2.5, -7.5, top])
+          cylinder(h = 10, d = 11, center = true, $fn=360);
+          
+          translate([-5 - 2.5, 8.75, top])
+          cylinder(h = 10, d = 11, center = true, $fn=360);
+            
+          translate([-5 - 2.5, 1.25, top])
+          cube([11, 16, 10], true);
+        }
+        
+        // 3mm relief
+        color([.1, .1, .1])
+        {
+           translate([-5 - BOARDL / 2 + 3.5, 0 - BOARDW / 2 + 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+           cylinder(h = 22, d = 3.7, center = true, $fn=360);
+           
+           translate([-5 + BOARDL / 2 - 3.5, 0 - BOARDW / 2 + 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+           cylinder(h = 22, d = 3.7, center = true, $fn=360);
+            
+           translate([-5 + BOARDL / 2 - 3.5, 0 + BOARDW / 2 - 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+           cylinder(h = 22, d = 3.7, center = true, $fn=360);
+           
+           translate([-5 - BOARDL / 2 + 3.5, 0 + BOARDW / 2 - 3.5, 10 + (BOARDH / 2) + standoffHeight / 2])
+           cylinder(h = 22, d = 3.7, center = true, $fn=360);
+        }   
+        
+        // 3mm counterbore
+        color([.1, .1, .1])
+        {
+           translate([-5 - BOARDL / 2 + 3.5, 0 - BOARDW / 2 + 3.5, top + height / 2 + .01])
+           cylinder(h = 3, d = 6.5, center = true, $fn=360);
+           
+           translate([-5 + BOARDL / 2 - 3.5, 0 - BOARDW / 2 + 3.5, top + height / 2 + .01])
+           cylinder(h = 3, d = 6.5, center = true, $fn=360);
+            
+           translate([-5 + BOARDL / 2 - 3.5, 0 + BOARDW / 2 - 3.5, top + height / 2 + .01])
+           cylinder(h = 3, d = 6.5, center = true, $fn=360);
+           
+           translate([-5 - BOARDL / 2 + 3.5, 0 + BOARDW / 2 - 3.5, top + height / 2 + .01])
+           cylinder(h = 3, d = 6.5, center = true, $fn=360);
+        }   
+    }
+}
+
+module antenna()
+{
     color([1,.922,.804])
-    translate ([38.5S, -7.5, 2])
+    translate ([38.5, -7, 2])
     cube([5, 15, 15], false);
 }
 
-bottom(90, 42, 20);
-pcb(-5, 0, 10);// BOARDH / 2);
+
+module posts()
+{
+  color([1, .7568, .4314])
+  {
+     translate([-5 - BOARDL / 2 + 3.5, 0 - BOARDW / 2 + 3.5, 15])
+     cylinder(h = 22, d = 3, center = true, $fn=360);
+     
+     translate([-5 + BOARDL / 2 - 3.5, 0 - BOARDW / 2 + 3.5, 15])
+     cylinder(h = 22, d = 3, center = true, $fn=360);
+     
+     translate([-5 + BOARDL / 2 - 3.5, 0 + BOARDW / 2 - 3.5, 15])
+     cylinder(h = 22, d = 3, center = true, $fn=360);
+     
+     translate([-5 - BOARDL / 2 + 3.5, 0 + BOARDW / 2 - 3.5, 15])
+     cylinder(h = 22, d = 3, center = true, $fn=360);
+  }    
+}
+
+
+
+
+module main()
+{
+    // the whole shebang
+    bottom(90, 42, 20);
+    top(90, 42, 3, 20);
+    pcb(-5, 0, 10);
+    antenna();
+    //posts();
+}
+
+difference()
+{
+    main();
+    
+    translate([48, 24, 12])
+    rotate([0, 0, 45])
+    cube([10, 10, 35], true);
+    
+    translate([-48, 24, 12])
+    rotate([0, 0, 45])
+    cube([10, 10, 35], true);
+    
+    translate([48, -24, 12])
+    rotate([0, 0, 45])
+    cube([10, 10, 35], true);
+    
+    translate([-48, -24, 12])
+    rotate([0, 0, 45])
+    cube([10, 10, 35], true);
+}
+
+

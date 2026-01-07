@@ -11,7 +11,11 @@ As stated in the main README, this project is using the Arduino IDE instead of V
 Start by going to https://docs.arduino.cc/software/ide/ to download the IDE.  **Don't use the cloud version - work locally**.  Get the installer for your flavor of OS and install it in the normal way.
 
 ### Get the needed board/library stuffs for the project
-Start the Arduino IDE.  From the menu, select `Tools >> Boards >> Board Manager...`.  Be sure to select the "esp32 by Espressif" version, and click the `Install` button.  Once the board is selected, the IDE will download and install the compiler toolchain and standard libraries for the architecture.
+Start the Arduino IDE.  From the menu, select `Tools >> Boards >> Board Manager...`.  
+
+Enter `esp32` into the filter box.  There should only be two results.
+
+Be sure to select the "esp32 by Espressif" version, and click the `Install` button.  Once the board is selected, the IDE will download and install the compiler toolchain and standard libraries for the architecture.
 
 Now for the libraries.  From the menu, select `Tools >> Manage Libraries...`  Using the Filter, search for and install the following four libraries (be sure to install the correct libraries, there are many with similar names to choose from):
 
@@ -43,3 +47,10 @@ Global variables use 52972 bytes (16%) of dynamic memory, leaving 274708 bytes f
 
 #### Viewing full build Output
 If you're interested, use the Arduino preferences menu and enable `verbose output`
+
+## Some developer notes
+The code is c++.  There are a couple of external libraries used (that is, outside of the ESP32 and Arduino libraries).  One is for the GPS sentence decoding, the other is for command line handling:
++ `minmea` is from Kosma Moczek <kosma@cloudyourcar.com>, and is used for the GPS handler.  Minor mods were made to better match this project.  Look for files `./src/Flocker/minmea.cpp` and `./src/Flocker/minmea.h`
++ `embedded_cli` is from 2021 Sviatoslav Kokurin (funbiscuit).  It is used for the command-line interface, and also has been slightly modified for use here.  Look for `./src/Flocker/embedded_cli.h`
+
+You may notice a mix of `new/delete` and `malloc/free`; this is generally a bad thing that leads to heap corruption, but in this case is intentional.  There are two heaps in play here; one heap in the internal SRAM which uses `new/delete`, and the other in the PSRAM chip.  That external memory is using `ps_malloc() and delete()` for it's heap.  If you add anything that will dynamically use memory, try to do it with `ps_malloc()` so that it is allocated in the external 8MB PSRAM.  Slightly slower, but much better.
