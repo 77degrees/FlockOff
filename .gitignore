@@ -3,5 +3,6 @@
 venv/
 *.db
 *.bk
+*.gcode
 .DS_Store
 dataGrip/

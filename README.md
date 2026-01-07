@@ -1,5 +1,5 @@
 ![image](./img/header.png)
-s
+
 # FlockOff
 Wardriving Flock Security camera detection
 
@@ -211,9 +211,9 @@ sqlite> .mode box
 sqlite> .headers on
 sqlite> select * from surveys;
 ┌───────────┬──────────┬─────────────────────┬───────────┬───────────┬──────────┐
-│ surveyInx │  notes   │      dateTime      │ longitude │ lattitude │ satCount │
+│ surveyInx │  notes   │      dateTime       │ longitude │ lattitude │ satCount │
 ├───────────┼──────────┼─────────────────────┼───────────┼───────────┼──────────┤
-│ 1         │ 'Example │2025-12-15 15:56:52 │ 42.0001   │ -87.0001  │ 8        │
+│ 1         │ 'Example │ 2025-12-15 15:56:52 │ 42.0001   │ -87.0001  │ 8        │
 └───────────┴──────────┴─────────────────────┴───────────┴───────────┴──────────┘
 ```  
  The `surveyInx` field is a foreign key into the `wifi` and `btle` tables.  This allows multiple surveys to be loaded into a single database file
@@ -280,5 +280,6 @@ sqlite> select b.name, b.mac, u.uuid16 from btle b join uuid16 u on b.btInx = u.
 │ OfficeJet 5200 series │ 86:a9:3e:bc:5c:c9 │ 65144  │
 │ N00DM                 │ ce:a3:ad:95:04:29 │ 65199  │
 └───────────────────────┴───────────────────┴────────┘
-```  
+```
 
+**More SQL examples can be found in `./example.sql`**
