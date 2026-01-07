@@ -424,10 +424,23 @@ if __name__ == "__main__":
         help="file to load",
     )
     parser.add_argument(
+        "--download",
+        dest="download",
+        required=False,
+        type=str,
+        default=None,
+        help="Save file locally",
+    )
+    parser.add_argument(
         "-v", "--verbose", dest="verbose", action="store_true", help="Extra output"
     )
     parser.add_argument(
-        "--dbfile", dest="dbfile", required=True, type=str, help="Sqlite3 DB filename"
+        "--dbfile",
+        dest="dbfile",
+        required=False,
+        type=str,
+        default=None,
+        help="Sqlite3 DB filename",
     )
     args = parser.parse_args()
 
@@ -441,6 +454,19 @@ if __name__ == "__main__":
         s.read_until()
         time.sleep(1.0)
         print(s.read_all().decode("utf-8"))
+        sys.exit(0)
+
+    if not args.download is None:
+        cmd = "cat -d {}\r\n".format(args.download)
+        s.write(bytes(cmd.encode("utf-8")))
+        # read firs line (echo of command), and discard
+        tmp = s.read_until().decode("utf-8")
+        # read the real thing
+        tmp = s.read_until().decode("utf-8")
+        f = open(args.download, "w")
+        f.write(tmp)
+        f.close()
+        print("Wrote {} bytes to local file '{}'".format(len(tmp), args.download))
         sys.exit(0)
 
     if not args.cat is None:
@@ -468,6 +494,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     surv = surveyJson(raw)
+
+    if args.dbfile is None:
+        print("Database file required, use '--dbfile' argument")
+        sys.exit(1)
 
     db = sq3db(args.dbfile)
 
