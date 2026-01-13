@@ -8,5 +8,5 @@ In no particular order:
     + Log to local filesytem
     + Roll logs
 
-+ Memory leak in BTLE scan
-  + Allocate the BT object in `psram`, and clean up appropriately
++ ~~Memory leak in BTLE scan~~
+  + ~~Allocate the BT object in `psram`, and clean up appropriately~~
