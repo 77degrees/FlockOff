@@ -8,6 +8,7 @@
 #include <MD5Builder.h>
 #include <ArduinoJson.h>
 
+#include "cli.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 
@@ -19,6 +20,14 @@
 
 #define BIG_BUF_SIZE (2 * 1024 * 1024)
 
+#define SCAN_HOP_TIME_MS 50
+#define BT_INTERVAL_MS 1000
+
+// There are 16 subtypes of data frames
+// Note that the "CF" data frames have been defined,
+// but I don't know if there are any actual implementations
+// of them - if you see one, it may be some custom thing
+// hijacking the subtype field
 #define DATA_FRAME_SUBTYPE_DATA 0x00
 #define DATA_FRAME_SUBTYPE_DATA_CF_ACK 0x01
 #define DATA_FRAME_SUBTYPE_DATA_CF_POLL 0x02
@@ -97,8 +106,8 @@ struct __attribute__((packed)) found_wifi_t
   uint8_t subtype;
   uint8_t channel;
   char ssid[SSID_LEN + 1];
-  uint8_t mac[6];
-  uint8_t assoc[6];
+  uint8_t sourceAddr[6];
+  uint8_t destAddr[6];
   uint32_t timestamp;
   int8_t rssi;
 };
@@ -118,7 +127,7 @@ struct found_ble_t
 };
 
 // variable length tagged parameter in a management packet.  A tagged parameter
-// is made up of the ID, length of the data, and the data itself.  For 
+// is made up of the ID, length of the data, and the data itself.  For
 // 802.11 packets, parameter 0 is the SSID, up to 32 bytes long
 struct __attribute__((packed)) wifi_ieee80211_mgmt_tagged_parameters_t
 {
@@ -143,11 +152,19 @@ struct __attribute__((packed)) wifi_ieee80211_mac_hdr_t
 static const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                                    36, 40, 44, 48, 149, 153, 157, 161, 165};
 
+enum wifi_match_t
+{
+    WIFI_MATCH_NONE = 0,
+    WIFI_MATCH_MAC,
+    WIFI_MATCH_SSID
+};
+
 static int16_t minBTRSSI;
 static int16_t minWiFiRSSI;
 const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
-static uint16_t channelInx = 0;   
-static bool scanning = false;
+static uint16_t channelInx = 0;
+static bool surveying = false;
+static bool continuousScanning = false;
 static MD5Builder hasher;
 static NimBLEScan* btScanner = nullptr;
 static uint8_t md5sum[16];
@@ -156,23 +173,47 @@ static std::map<uint32_t, found_wifi_t>::const_iterator citWifiDevices;
 static std::map<uint32_t, found_ble_t> bleDevices;
 static std::map<uint32_t, found_ble_t>::const_iterator citBleDevices;
 
+static std::list<std::string> wiFiMacMatch;
+static std::list<std::string>::const_iterator citWiFiMacMatch;
+
 void reverseBytes(uint8_t* data, size_t len);
 const char* wifiPktTypeToText(enum wifi_pkt_t t);
 const char* WiFiMgmtSubtypeToText(uint8_t stype);
 const char* WiFiDataSubtypeToText(uint8_t stype);
 
+static FLOGGER scanLog;
+static bool loggerOK = false;
+
+/****************************************************
+* wiFiMatch()
+*****************************************************
+* Returns match type on WiFi device match
+*****************************************************/
+wifi_match_t wiFiMatch(const found_wifi_t& w)
+{
+  for (citWiFiMacMatch = wiFiMacMatch.begin(); citWiFiMacMatch != wiFiMacMatch.end(); ++citWiFiMacMatch)
+  {
+    if (!strncmp(macToText(w.sourceAddr), citWiFiMacMatch->c_str(), 8))
+    {
+      return (WIFI_MATCH_MAC);
+    }
+  }
+  return (WIFI_MATCH_NONE);
+}
+
+
 /*************************************************
 * Promiscuous mode packet callback handler
 *
 **************************************************
-* If an 802.11 packet of the WIFI_MANAGEMENT or 
-* WIFI_DATA is seen, add it to a std::map of results.  
+* If an 802.11 packet of the WIFI_MANAGEMENT or
+* WIFI_DATA is seen, add it to a std::map of results.
 *
 * Note, before adding, check to see if that one
 * is already in the map to prevent dups
 *
 * Frankly, it blows my mind that a tiny six buck
-* microcontroller has the resources to handle 
+* microcontroller has the resources to handle
 * STL containers (with iterators, no less!).
 *************************************************/
 void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
@@ -184,7 +225,7 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
   // right to the payload, which is the start of the header
   const wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buff;
   const wifi_ieee80211_mac_hdr_t *hdr = (wifi_ieee80211_mac_hdr_t *)ppkt->payload;
-  
+
   // if the signal is below minimum RSSI, just bail now
   if (ppkt->rx_ctrl.rssi < flockCfg.getMinRSSI())
   {
@@ -195,19 +236,23 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
   found_wifi_t wifi;
   memset(wifi.ssid, 0, SSID_LEN + 1);   // clear buffer for ssid
 
-  //uint8_t stype = ((hdr->frame_ctrl & 0xFF) >> 4) & 0x0F;
-  wifi.subtype = ((hdr->frame_ctrl & 0xFF) >> 4) & 0x0F;;                 // keep track of the frame subtype
+  // keep track of the frame subtype
+  wifi.subtype = ((hdr->frame_ctrl & 0xFF) >> 4) & 0x0F;
 
   // get the length of the packet (minus header stuffs and CRC32);
+  // Do a quick sanity check to be sure the length is at least the
+  // size of the header + CRC; if not, bail
+  if (ppkt->rx_ctrl.sig_len < (sizeof(*hdr) + 4))
+  {
+      return;
+  }
+
   size_t pktLen = ppkt->rx_ctrl.sig_len - sizeof(*hdr) - 4; // last 4 is the CRC32
 
   // this is a management packet - a beacon, probe request/response,
   if (type == WIFI_PKT_MGMT)
   {
     wifi.type = wifi_management;
-
-    // IEEE 802.11 Wifi header - get the subtype for the Mangement type packet
-    //uint8_t stype = ((hdr->frame_ctrl & 0xFF) >> 4) & 0x0F;
 
     // remaining packet length, reduced by count of fixed data bytes
     if (pktLen > fixedParameterLength[wifi.subtype])
@@ -222,18 +267,16 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
     // make sense out of the payload.  This depends a lot on the frame subtype; each subtype
     // has zero or more bytes if "fixed data", followed by zero or more tagged parameters.
     // skip past the fixed data bytes to get to the first tagged parameter
-    const wifi_ieee80211_mgmt_tagged_parameters_t* taggedPar = 
+    const wifi_ieee80211_mgmt_tagged_parameters_t* taggedPar =
           (wifi_ieee80211_mgmt_tagged_parameters_t*)&hdr->frame[fixedParameterLength[wifi.subtype]];
 
-    //wifi.subtype = stype;                 // keep track of the frame subtype
-    
     // try to get SSID tagged parameter
     if (pktLen > sizeof(wifi_ieee80211_mgmt_tagged_parameters_t))
     {
       // is this parameter an SSID?
       if (taggedPar->parameter_id == 0)
       {
-        // parameter length is the length of the SSID char array.  
+        // parameter length is the length of the SSID char array.
         // NOT ZERO TERMED, max 32 chars
         if (taggedPar->length && (taggedPar->length < SSID_LEN))
         {
@@ -253,40 +296,48 @@ void wifi_pkt_hndlr(void* buff, wifi_promiscuous_pkt_type_t type)
     goodPkt = true;
 
     wifi.type = wifi_data;
-
-    // No subtype for a data packet
-    //uint8_t stype = 255;
-
   } // this is a data packet
 
   if (goodPkt)
   {
     // populate the rest of the the results
-    wifi.channel = channels[channelInx]; // wifi channel
-    wifi.rssi = ppkt->rx_ctrl.rssi;      // signal strength
-    memcpy(wifi.mac, hdr->addr2, 6);     // MAC of the WiFi AP that sent the packet
-    memcpy(wifi.assoc, hdr->addr1, 6);   // 
-    wifi.timestamp = millis();           // system timestamp (used for aging)
+    wifi.channel = channels[channelInx];      // wifi channel
+    wifi.rssi = ppkt->rx_ctrl.rssi;           // signal strength
+    memcpy(wifi.sourceAddr, hdr->addr2, 6);   //
+    memcpy(wifi.destAddr, hdr->addr1, 6);     //
+    wifi.timestamp = millis();                // system timestamp (used for aging)
 
-    // generate a key for the std::map - this will be the md5 hash of the found packet struct
-    // Note, do not include the RSSI in the hash, or we'll end up with dups in the map
-    hasher.begin();
-    hasher.add((uint8_t*)&wifi, 45);
-    hasher.calculate();
-    hasher.getBytes(md5sum);
+    wifi_match_t match = wiFiMatch(wifi);
 
-    // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
-    uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | 
-                    ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
-    
-    // have we seen this one already?
-    citWifiDevices = wifiDevices.find(key);
-    if (citWifiDevices == wifiDevices.end())
+    if (surveying || match != WIFI_MATCH_NONE)
     {
-      // no?  then add it
-      wifiDevices[key] = wifi;
-      //flockLED.pulseRed(LEDS::LED_COMMS, 10);
-    }
+        // generate a key for the std::map - this will be the md5 hash of the found packet struct
+        // Note, do not include the RSSI in the hash, or we'll end up with dups in the map
+        hasher.begin();
+        hasher.add((uint8_t*)&wifi, 45);
+        hasher.calculate();
+        hasher.getBytes(md5sum);
+
+        // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
+        uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) |
+                        ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
+
+        // have we seen this one already?
+        citWifiDevices = wifiDevices.find(key);
+        if (citWifiDevices == wifiDevices.end())
+        {
+            // no?  then add it
+            wifiDevices[key] = wifi;
+            if (!surveying && loggerOK && flockCfg.getScanLogEnabledState())
+            {
+                switch (match)
+                {
+                    case WIFI_MATCH_MAC: scanLog.addLogLine("WIFI", "Matched mac %s\r\n", macToText(wifi.sourceAddr)); break;
+                    case WIFI_MATCH_SSID: scanLog.addLogLine("WIFI", "Matched on ssid %s\r\n", wifi.ssid); break;
+                }
+            }
+        }
+    } // packet is a match! (or we are doing a survey)
   } // adding good packet to map
 } // promisuous wifi packet handler
 
@@ -390,9 +441,9 @@ class btAdvertisedCBs : public NimBLEScanCallbacks
     hasher.getBytes(md5sum);
 
     // kinda hokey, the key are the first 4 bytes of the MD5 hash of the struct.  Shouldn't be collisions....
-    uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) | 
+    uint32_t key = ((uint32_t)md5sum[0] << 24) | ((uint32_t)md5sum[1] << 16) |
                     ((uint32_t)md5sum[2] << 8) | ((uint32_t)md5sum[3]);
-    
+
     // have we seen this one already?
     citBleDevices = bleDevices.find(key);
     if (citBleDevices == bleDevices.end())
@@ -419,10 +470,17 @@ private:
   }
 };
 
+
+/************************************************
+* begin()
+*************************************************
+* Scanner class constructor
+*************************************************/
 bool SCANNER::begin()
 {
   channelInx = 0;
-  scanning = false;
+  surveying = false;
+  scannerRunning = false;
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -432,36 +490,43 @@ bool SCANNER::begin()
 
   // we're only interested in MANAGEMENT and DATA frames
 	const wifi_promiscuous_filter_t filt = {.filter_mask = (WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA)};
-	esp_wifi_set_promiscuous_filter(&filt); 
+	esp_wifi_set_promiscuous_filter(&filt);
 
   // set callback
   esp_wifi_set_promiscuous_rx_cb(&wifi_pkt_hndlr);
 
   // start with first channel
-  esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
-  
+  esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);
+
+  // test for WiFi MAC matching
+  wiFiMacMatch.push_back("a0:8a:06");
+
   return (true);
 }
 
+// Static pointers used for allocation of BT callback
+// class.
 static btAdvertisedCBs* btCBs = nullptr;
 static void* btCBMem = nullptr;
 
+/************************************************
+* startBLE()
+*************************************************
+* Configure and start the Bluetooth scanner
+*************************************************/
 void SCANNER::startBLE()
 {
   if (btScanner)
   {
-    Serial.printf(CLI_CYA "SCANNER::startBLE() - scanner was non-null\r\n" CLI_RESET);
     this->stopBLE();
-    delay(100);
+    delay(50);
   }
 
   // doing a placement new to allocate the btAdvertisedCBs class
-  // this may seem goofy, but we want to allocate in PSRAM instead 
+  // this may seem goofy, but we want to allocate in PSRAM instead
   // of on-die SRAM
   btCBMem = ps_malloc(sizeof(btAdvertisedCBs));
   btAdvertisedCBs* btCBs = new (btCBMem) btAdvertisedCBs();
-
-  flockLog.addLogLine("SCAN", "Address of btCBMem is %p, address of btCBs is %p\r\n", btCBMem, btCBs);
 
   BLEDevice::init("");
   btScanner = BLEDevice::getScan();
@@ -473,12 +538,15 @@ void SCANNER::startBLE()
   btScanner->start(0, false);
 }
 
-
+/************************************************
+* stopBLE()
+*************************************************
+* Stop the Bluetooth scanner and release resources
+*************************************************/
 void SCANNER::stopBLE()
 {
   if (btScanner)
   {
-    Serial.printf(CLI_CYA "SCANNER::stopBLE() - scanner was non-null\r\n" CLI_RESET);
     btScanner->stop();
     delay(200);
     btScanner->clearResults();
@@ -493,206 +561,327 @@ void SCANNER::stopBLE()
   }
 }
 
-/*****************************************************
-* Do a single pass through all WiFi channels to see
-* what we can find out there.
-*****************************************************/
-void SCANNER::survey(uint32_t interval, bool doWiFi, bool doBT, const char* fname, bool doJson, const char* notes)
+/************************************************
+* update()
+*************************************************
+* Call this method periodically
+*************************************************/
+void SCANNER::update()
 {
-  flockLog.addLogLine("SCAN", "survey() starting\r\n");
-  uint32_t msnow = millis();
-  bleDevices.clear();
-  wifiDevices.clear();
-
-  flockLED.alertBlu(LEDS::LED_COMMS);
-  flockLED.alertGrn(LEDS::LED_COMMS);
-
-  Serial.printf(CLI_CYA "Survey starting.\r\n" CLI_RESET);
-  channelInx = 0;
-  scanning = doWiFi;
-
-  if (scanning)
-  { 
-    Serial.printf(CLI_CYA "Starting WiFi.\r\n" CLI_RESET);
-    esp_wifi_set_promiscuous(true);
-    Serial.printf(CLI_YEL "Setting channel %d" CLI_RESET, channels[channelInx]);
-    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);
-
-    flockLog.addLogLine("SCAN", "survey() starting WiFi scan\r\n");
-
-    while (scanning)
+    if (scannerRunning)
     {
-      if ((millis() - msnow) > interval)
-      {
-        msnow = millis();
-        ++channelInx;
-        channelInx %= channelCount;
-
-        if (!channelInx)
+        if ((millis() - btTimeOffset) > BT_INTERVAL_MS)
         {
-          scanning = false;
-          esp_wifi_set_promiscuous(false);
-          Serial.printf(CLI_CYA "\r\nWiFi done.\r\n" CLI_RESET);
+            btTimeOffset = millis();
+
+            startBLE();
+            delay(100);
+            stopBLE();
+        }
+
+        // handle WiFi channel switching
+        if ((millis() - channelTimeOffset) > channelTime)
+        {
+            channelTimeOffset = millis();
+            ++channelInx;
+            channelInx %= channelCount;
+            esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);
+        }
+
+        // things to do when continuously scanning
+        if (continuousScanning)
+        {
+            if (Serial.available())
+            {
+                stopScanning();
+                Serial.read();  // read the character that stopped the scan
+            }
+            else
+            {
+                // remove found devices when they timeout
+                for (citWifiDevices = wifiDevices.begin(); citWifiDevices != wifiDevices.end(); ++citWifiDevices)
+                {
+                    if (millis() > (citWifiDevices->second.timestamp + (flockCfg.getScanHoldTime() * 1000)))
+                    {
+                        wifiDevices.erase(citWifiDevices->first);
+                    }
+                }
+
+                if (wifiDevices.size())
+                {
+                    flockLED.stopBlu(LEDS::LED_COMMS);
+                    flockLED.alertRed(LEDS::LED_COMMS);
+                }
+                else
+                {
+                    flockLED.stopRed(LEDS::LED_COMMS);
+                    flockLED.steadyBlu(LEDS::LED_COMMS, 140);
+                }
+            }
+        } // doing continuous scan
+        else if (surveying)
+        {
+            if (!surveyStopTrigger)
+            {
+                if (channelInx)
+                {
+                    surveyStopTrigger = true;
+                }
+            }
+            else if (!channelInx)
+            {
+                Serial.printf(CLI_RESET "\r\n\r\n");
+                stopScanning();
+                postSurveyActivities();
+            }
         }
         else
         {
-          Serial.printf(CLI_YEL "...%d" CLI_RESET, channels[channelInx]);
-          esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE); 
+            // we shouldn't be here, shut it down
+            Serial.printf(CLI_BOLD_RED "\r\nStopping un-started scan!\r\n" CLI_RESET);
+            stopScanning();
         }
-      }
-
-      flockLED.update();
     }
-    
-    flockLog.addLogLine("SCAN", "survey() WiFi scan done\r\n");
-  }
+}
 
-  if (doBT)
-  {
-    flockLog.addLogLine("SCAN", "survey() starting BTLE scan\r\n");
-    Serial.printf(CLI_CYA "Starting BLE\r\n");
-    this->startBLE();
-    delay(250);
-    this->stopBLE();
-    Serial.printf(CLI_CYA "BLE Done\r\n");
-    flockLog.addLogLine("SCAN", "survey() BTLE scan done\r\n");
-  }
+/************************************************
+* stopScanning()
+*************************************************
+* Shutdown any scan (continuous or survey)
+*************************************************/
+void SCANNER::stopScanning()
+{
+    continuousScanning = false;
+    scannerRunning = false;
+    surveying = false;
 
-  JsonDocument sur;
-  if (notes && strlen(notes))     sur["SurveyNotes"] = notes;
-  else                            sur["SurveyNotes"] = "Generic survey";
+    holdCLI(false);
+    esp_wifi_set_promiscuous(false);
+    stopBLE();
 
-  sur["Device"] = flockCfg.getDeviceName();
+    flockLED.stopRed(LEDS::LED_COMMS);
+    flockLED.stopGrn(LEDS::LED_COMMS);
+    flockLED.stopBlu(LEDS::LED_COMMS);
 
-  JsonArray location = sur["LocationLongLat"].to<JsonArray>();
-  location.add(gps.getLongitude());
-  location.add(gps.getLatitude());
-  sur["SatelliteCount"] = gps.getSatelliteCount();
-
-  time_t t = time(NULL);
-  tm *tmp;
-  tmp = localtime(&t);
-  char tstring[64];
-  strftime(tstring, 63, "%F %T", tmp);
-  sur["DateTime"] = tstring;
-  sur["Timezone"] = flockCfg.getTimeZone();
-  sur["DataVersion"] = SURVEY_JSON_VERSION;
-
-  JsonArray devs = sur["WiFiDevices"].to<JsonArray>();
-  JsonDocument dev;
-
-  for (citWifiDevices = wifiDevices.begin(); citWifiDevices != wifiDevices.end(); ++citWifiDevices)
-  {
-    dev.clear();
-    dev["Method"] = discoveryToText(WIFI_DISCOVERY);
-    dev["Type"] = wifiPktTypeToText(citWifiDevices->second.type);
-    if (citWifiDevices->second.type == wifi_management)
+    if (loggerOK)
     {
-      dev["Subtype"] = WiFiMgmtSubtypeToText(citWifiDevices->second.subtype);
+        scanLog.addLogLine("SCAN", "Ending scan, closing log.\r\n");
+        scanLog.flushNow();
+        scanLog.close();
+        loggerOK = false;
+    }
+
+    flockLog.addLogLine("SCAN", "Stopping scanner.\r\n");
+    Serial.printf(CLI_RESET "\r\n");
+}
+
+/************************************************
+* startWiFi()
+*************************************************
+* Centralized method to turn on promicuous mode
+*************************************************/
+void SCANNER::startWiFi()
+{
+    scannerRunning = true;
+    holdCLI(true);
+    channelInx = 0;
+
+    bleDevices.clear();
+    wifiDevices.clear();
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(channels[channelInx], WIFI_SECOND_CHAN_NONE);
+}
+
+/************************************************
+* scan()
+*************************************************
+* Begin the continuous scan process
+*************************************************/
+void SCANNER::scan(const char *logname)
+{
+    if (logname && strlen(logname))
+    {
+        loggerOK = scanLog.begin(500, logname, flockCfg.getScanLogFileCount());
     }
     else
     {
-      dev["Subtype"] = WiFiDataSubtypeToText(citWifiDevices->second.subtype);
-    }
-    dev["SSID"] = citWifiDevices->second.ssid;
-    dev["SourceAddr"] = macToText(citWifiDevices->second.mac);
-    dev["DestAddr"] = macToText(citWifiDevices->second.assoc);
-    dev["Channel"] = citWifiDevices->second.channel;
-    dev["RSSI"] = citWifiDevices->second.rssi;
-
-    devs.add(dev);
-  }
-
-  JsonArray btdevs = sur["BLEDevices"].to<JsonArray>();
-
-  for (citBleDevices = bleDevices.begin(); citBleDevices != bleDevices.end(); ++citBleDevices)
-  {
-    dev.clear();
-    dev["Method"] = discoveryToText(BTLE_DISCOVERY);
-    dev["Name"] = citBleDevices->second.name;
-    dev["MAC"] = macToText(citBleDevices->second.mac);
-    dev["RSSI"] = citBleDevices->second.rssi;
-
-    JsonArray uid16 = dev["UUID16bit"].to<JsonArray>();
-    std::list<uint16_t> tmp16 = citBleDevices->second.services16;
-    if (tmp16.size())
-    {
-      for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
-      {
-        uid16.add(*cit);
-      }
+        loggerOK = scanLog.begin(500, "autoscan", flockCfg.getScanLogFileCount());
     }
 
-    JsonArray uid128 = dev["UUID128bit"].to<JsonArray>();
-    std::list<std::string> tmp128 = citBleDevices->second.services128;
-    if (tmp16.size())
+    channelTime = SCAN_HOP_TIME_MS;
+    channelTimeOffset = btTimeOffset = millis();
+
+    startWiFi();
+
+    continuousScanning = true;
+
+    Serial.printf(CLI_BOLD_CYA "Starting scan - press any key to stop\r\n" CLI_RESET);
+    flockLog.addLogLine("SCAN", "scan() starting\r\n");
+}
+
+/************************************************
+* survey()
+*************************************************
+* Begin a single scan process
+*************************************************/
+void SCANNER::survey(uint32_t interval, const char* fname, const char* notes)
+{
+    if (fname)      strncpy(surveyFileName, fname, 119);
+    else            memset(surveyFileName, '\0', 120);
+
+    if (notes)      strncpy(surveyNotes, notes, 119);
+    else            memset(surveyNotes, '\0', 120);
+
+    channelTimeOffset = btTimeOffset = millis();
+    channelTime = interval;
+    surveying = true;
+    surveyStopTrigger = false;
+
+    startWiFi();
+
+    flockLED.alertBlu(LEDS::LED_COMMS);
+    flockLED.alertGrn(LEDS::LED_COMMS);
+
+    Serial.printf(CLI_CYA "Survey starting\r\n" CLI_RESET);
+    flockLog.addLogLine("SCAN", "survey() starting\r\n");
+}
+
+/************************************************
+* postSurveyActivities()
+*************************************************
+* Process the data after a single survey scan
+*************************************************/
+void SCANNER::postSurveyActivities()
+{
+    JsonDocument sur;
+    if (strlen(surveyNotes))      sur["SurveyNotes"] = surveyNotes;
+    else                          sur["SurveyNotes"] = "Generic survey";
+
+    sur["Device"] = flockCfg.getDeviceName();
+
+    JsonArray location = sur["LocationLongLat"].to<JsonArray>();
+    location.add(gps.getLongitude());
+    location.add(gps.getLatitude());
+    sur["SatelliteCount"] = gps.getSatelliteCount();
+
+    time_t t = time(NULL);
+    tm *tmp;
+    tmp = localtime(&t);
+    char tstring[64];
+    strftime(tstring, 63, "%F %T", tmp);
+    sur["DateTime"] = tstring;
+    sur["Timezone"] = flockCfg.getTimeZone();
+    sur["DataVersion"] = SURVEY_JSON_VERSION;
+
+    JsonArray devs = sur["WiFiDevices"].to<JsonArray>();
+    JsonDocument dev;
+
+    for (citWifiDevices = wifiDevices.begin(); citWifiDevices != wifiDevices.end(); ++citWifiDevices)
     {
-      for (std::list<std::string>::const_iterator cit = tmp128.begin(); cit != tmp128.end(); ++cit)
-      {
-        uid128.add(*cit);
-      }
-    }
+        dev.clear();
+        dev["Method"] = discoveryToText(WIFI_DISCOVERY);
+        dev["Type"] = wifiPktTypeToText(citWifiDevices->second.type);
+        if (citWifiDevices->second.type == wifi_management)
+        {
+            dev["Subtype"] = WiFiMgmtSubtypeToText(citWifiDevices->second.subtype);
+        }
+        else
+        {
+            dev["Subtype"] = WiFiDataSubtypeToText(citWifiDevices->second.subtype);
+        }
+        dev["SSID"] = citWifiDevices->second.ssid;
+        dev["SourceAddr"] = macToText(citWifiDevices->second.sourceAddr);
+        dev["DestAddr"] = macToText(citWifiDevices->second.destAddr);
+        dev["Channel"] = citWifiDevices->second.channel;
+        dev["RSSI"] = citWifiDevices->second.rssi;
 
-    JsonArray duid16 = dev["DataUUID16bit"].to<JsonArray>();
-    tmp16 = citBleDevices->second.serviceData16;
-    if (tmp16.size())
+        devs.add(dev);
+    } // adding WiFi devices
+
+    JsonArray btdevs = sur["BLEDevices"].to<JsonArray>();
+
+    for (citBleDevices = bleDevices.begin(); citBleDevices != bleDevices.end(); ++citBleDevices)
     {
-      for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
-      {
-        duid16.add(*cit);
-      }
-    }
+        dev.clear();
+        dev["Method"] = discoveryToText(BTLE_DISCOVERY);
+        dev["Name"] = citBleDevices->second.name;
+        dev["MAC"] = macToText(citBleDevices->second.mac);
+        dev["RSSI"] = citBleDevices->second.rssi;
 
-    JsonArray duid128 = dev["DataUUID128bit"].to<JsonArray>();
-    tmp128 = citBleDevices->second.serviceData128;
-    if (tmp16.size())
+        JsonArray uid16 = dev["UUID16bit"].to<JsonArray>();
+        std::list<uint16_t> tmp16 = citBleDevices->second.services16;
+        if (tmp16.size())
+        {
+            for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
+            {
+                uid16.add(*cit);
+            }
+        }
+
+        JsonArray uid128 = dev["UUID128bit"].to<JsonArray>();
+        std::list<std::string> tmp128 = citBleDevices->second.services128;
+        if (tmp16.size())
+        {
+            for (std::list<std::string>::const_iterator cit = tmp128.begin(); cit != tmp128.end(); ++cit)
+            {
+                uid128.add(*cit);
+            }
+        }
+
+        JsonArray duid16 = dev["DataUUID16bit"].to<JsonArray>();
+        tmp16 = citBleDevices->second.serviceData16;
+        if (tmp16.size())
+        {
+            for (std::list<uint16_t>::const_iterator cit = tmp16.begin(); cit != tmp16.end(); ++cit)
+            {
+                duid16.add(*cit);
+            }
+        }
+
+        JsonArray duid128 = dev["DataUUID128bit"].to<JsonArray>();
+        tmp128 = citBleDevices->second.serviceData128;
+        if (tmp16.size())
+        {
+            for (std::list<std::string>::const_iterator cit = tmp128.begin(); cit != tmp128.end(); ++cit)
+            {
+                duid128.add(*cit);
+            }
+        }
+
+        btdevs.add(dev);
+    } // adding Bluetooth items to JSON
+
+    Serial.printf(CLI_CYA "Survey done, found " CLI_GRN "%d" CLI_CYA " WiFi devices, " CLI_GRN "%d" CLI_CYA " Bluetooth devices.\r\n" CLI_RESET,
+            wifiDevices.size(), bleDevices.size());
+
+    if (!strlen(surveyFileName))
     {
-      for (std::list<std::string>::const_iterator cit = tmp128.begin(); cit != tmp128.end(); ++cit)
-      {
-        duid128.add(*cit);
-      }
-    }
-    
-    btdevs.add(dev);
-  }
-
-  Serial.printf(CLI_CYA "Survey done, found " CLI_GRN "%d" CLI_CYA " WiFi devices, " CLI_GRN "%d" CLI_CYA " Bluetooth devices.\r\n" CLI_RESET, 
-      wifiDevices.size(), bleDevices.size());
-
-  if (!fname || !strlen(fname))
-  {
-    serializeJsonPretty(sur, Serial);
-    Serial.printf("\r\n");
-  }
-  else
-  {
-    Serial.printf(CLI_CYA "Saving survey results to " CLI_GRN "%s" CLI_CYA ", format " CLI_YEL "%s\r\n" CLI_RESET,
-      fname, doJson ? "JSON" : "text");
-
-    char* output = (char*)ps_malloc(BIG_BUF_SIZE + 1);
-    memset(output, 0, BIG_BUF_SIZE + 1);
-
-    if (output)
-    {
-      serializeJson(sur, output, BIG_BUF_SIZE);
-      
-      size_t written = flockfs.writeFile(fname, (uint8_t*)output, strlen(output));
-      Serial.printf(CLI_CYA "Wrote " CLI_GRN "%d" CLI_CYA " bytes to file\r\n" CLI_RESET, written);
-      flockLog.addLogLine("SCAN", "survey() wrote %d bytes to %s\r\n", written, fname);
-
-      free (output);
+        serializeJsonPretty(sur, Serial);
+        Serial.printf("\r\n");
     }
     else
     {
-      flockLog.addLogLine("SCAN", "Unable to allocate %d bytes for file write buffer\r\n", BIG_BUF_SIZE + 1);
-      Serial.printf(CLI_BOLD_RED "Unable to allocate for file write buffer!\r\n" CLI_RESET);
+        Serial.printf(CLI_CYA "Saving survey results to " CLI_GRN "%s\r\n" CLI_RESET, surveyFileName);
+
+        char* output = (char*)ps_malloc(BIG_BUF_SIZE + 1);
+        memset(output, 0, BIG_BUF_SIZE + 1);
+
+        if (output)
+        {
+            serializeJson(sur, output, BIG_BUF_SIZE);
+
+            size_t written = flockfs.writeFile(surveyFileName, (uint8_t*)output, strlen(output));
+            Serial.printf(CLI_CYA "Wrote " CLI_GRN "%d" CLI_CYA " bytes to file\r\n" CLI_RESET, written);
+            flockLog.addLogLine("SCAN", "survey() wrote %d bytes to %s\r\n", written, surveyFileName);
+
+            free (output);
+        }
+        else
+        {
+            flockLog.addLogLine("SCAN", "Unable to allocate %d bytes for file write buffer\r\n", BIG_BUF_SIZE + 1);
+            Serial.printf(CLI_BOLD_RED "Unable to allocate for file write buffer!\r\n" CLI_RESET);
+        }
     }
-
-
-  }
-
-  flockLED.stopBlu(LEDS::LED_COMMS);
-  flockLED.stopGrn(LEDS::LED_COMMS);
 } // survey
 
 /*************************************************
