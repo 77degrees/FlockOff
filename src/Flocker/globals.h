@@ -9,7 +9,7 @@
 #include "scanner.h"
 #include "led.h"
 #include "flockLog.h"
-
+#include "targets.h"
 
 /**********************************
 * Versions
@@ -24,6 +24,12 @@
 
 
 /**********************************
+* Global methods
+**********************************/
+void busyDelayLoop(uint32_t delay);
+const char* macToText(const uint8_t* mac);
+
+/**********************************
 * gobal classes/constants/variables
 **********************************/
 extern NMEAGPS gps;
@@ -32,6 +38,7 @@ extern CONFIG flockCfg;
 extern SCANNER flockScan;
 extern LEDS flockLED;
 extern FLOGGER flockLog;
+extern TARGETS scanTargets;
 extern bool psRamInitOk;
 extern bool initOk;
 
@@ -39,7 +46,6 @@ extern bool initOk;
 /**********************************
 * global defines
 **********************************/
-#define SSID_LEN  32  // 802.11 max SSID length
 
 
 /**********************************

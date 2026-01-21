@@ -8,6 +8,8 @@
 #define CLI_IMPL_H_
 
 #include "globals.h"
+#include "alloc.h"
+
 #define CLI_BUFFER_SIZE_PS 8192
 #define CLI_RX_BUFFER_SIZE_PS 1024
 #define CLI_CMD_BUFFER_SIZE_PS 1024
@@ -94,6 +96,14 @@ const char* helpConfig = "config [OPTION]\r\n"
                          "  -l      display current configuration (dumps the raw JSON in pretty-print format)\r\n\r\n"
                          "If -l not given, show system configuration menu.\r\n\r\n";
 
+// criteria config stuff
+void onCriteria(EmbeddedCli* cli, char* args, void* context);
+const char* helpCriteria = "criteria [OPTIONS]\r\n"
+                           "Set or display target matching criteria\r\n\r\n"
+                           "  -s   set default WiFi MAC prefix set\r\n"
+                           "  -l   display wiFi MAC prefixes\r\n\r\n"
+                           "This is a lot of stuff here \r\n\r\n";
+
 /*******************************************************
 * Binding struct for each command:
  struct CliCommandBinding {
@@ -118,7 +128,8 @@ const struct CliCommandBinding bindings[] = {
   {"cp", "Copy file", helpCp, true, nullptr, onCp},
   {"cat", "Cat file", helpCat, true, nullptr,  onCat},
   {"status", "Get system status", helpStatus, false, nullptr, onStatus},
-  {"config", "Get/Set config values", helpConfig, true, nullptr, onConfig}};
+  {"config", "Get/Set config values", helpConfig, true, nullptr, onConfig},
+  {"criteria", "Get/Set target matching criteria", helpCriteria, true, nullptr, onCriteria}};
 
 const size_t bindingCount = sizeof(bindings) / sizeof(bindings[0]);
 
@@ -167,6 +178,33 @@ void onConfig(EmbeddedCli* cli, char* args, void* context)
     flockCfg.setConfigValues();
   }
 }
+
+void onCriteria(EmbeddedCli* cli, char* args, void* context)
+{
+  if (embeddedCliGetTokenCount(args) == 1)
+  {
+    const char* cmd = embeddedCliGetToken(args, 1);
+    if (!strcmp("-l", cmd))
+    {
+      Serial.printf(CLI_YEL "WiFi MAC match list has " CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL " targets\r\n" CLI_RESET, scanTargets.getWiFiMacCount());
+    }
+    else if (!strcmp("-s", cmd))
+    {
+      Serial.printf(CLI_YEL "Set default WiFi MAC match list, " CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL " targets\r\n", scanTargets.loadDefaultWiFiMacs());
+    }
+    else if (!strcmp("-x", cmd))
+    {
+      onStatus(cli, nullptr, nullptr);
+      utils::string test;
+      for (size_t ii = 0; ii < 5000; ++ii)
+      {
+        test += "abcdefghi";
+      }
+      onStatus(cli, nullptr, nullptr);
+    }
+  }
+}
+
 
 /******************************************************
 * onVersion()
@@ -328,6 +366,7 @@ void onScan(EmbeddedCli* cli, char* args, void* context)
         {
             strncpy(logFileName, embeddedCliGetToken(args, 2), 119);
         }
+        Serial.printf(CLI_BOLD_RED "Bad parameter: usage scan [-l <FILENAME>]\r\n" CLI_RESET);
     }
 
     flockScan.scan(logFileName);
@@ -361,8 +400,8 @@ void onClear(EmbeddedCli *cli, char *args, void *context)
 ******************************************************/
 void onLs(EmbeddedCli *cli, char *args, void *context)
 {
-  std::vector<std::string>files;
-  std::vector<std::string>::const_iterator filesCit;
+  std::vector<utils::string>files;
+  std::vector<utils::string>::const_iterator filesCit;
   bool dump = false;
 
   // call filesystem handler to populate all files and
@@ -655,7 +694,12 @@ void onReset(EmbeddedCli *cli, char *args, void *context)
 ******************************************************/
 void onStatus(EmbeddedCli* cli, char* args, void* context)
 {
+  Serial.printf(CLI_CYA "->Hardware:\r\n" CLI_RESET);
+  Serial.printf(CLI_YEL "\tChip model " CLI_BOLD_GRN "%s\r\n" CLI_RESET, ESP.getChipModel());
+  Serial.printf(CLI_YEL "\tChip frequency " CLI_BOLD_GRN "%d MHz\r\n" CLI_RESET, ESP.getCpuFreqMHz());
+  Serial.printf(CLI_YEL "\tCore count " CLI_BOLD_GRN "%d cores\r\n" CLI_RESET, ESP.getChipCores());
   Serial.printf(CLI_CYA "->GPS:\r\n" CLI_RESET);
+ 
   if (gps.getFixQuality() > 0)
   {
     struct tm tm_;
@@ -678,16 +722,16 @@ void onStatus(EmbeddedCli* cli, char* args, void* context)
   size_t cap;
   size_t used;
   flockfs.getInfo(&cap, &used);
-  Serial.printf(CLI_YEL "\tTotal capacity " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "bytes, "
+  Serial.printf(CLI_YEL "\tTotal capacity " CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL "bytes, "
                 CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "KiB free)\r\n" CLI_RESET,
                 cap, used, (cap - used) / 1024);
 
   Serial.printf(CLI_CYA "->Memories:\r\n" CLI_RESET);
-  Serial.printf(CLI_YEL "\tInternal total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "bytes, " CLI_BOLD_GRN "%d"
-                CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "KiB free)\r\n" CLI_RESET,
+  Serial.printf(CLI_YEL "\tInternal total heap " CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL " bytes, " CLI_BOLD_GRN "%d"
+                CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL " KiB free)\r\n" CLI_RESET,
                 ESP.getHeapSize(), (ESP.getHeapSize() - ESP.getFreeHeap()), ESP.getFreeHeap() / 1024);
-  Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "bytes, " CLI_BOLD_GRN "%d"
-                CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET " " CLI_YEL "KiB free)\r\n" CLI_RESET,
+  Serial.printf(CLI_YEL "\tPSRAM total heap " CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL " bytes, " CLI_BOLD_GRN "%d"
+                CLI_RESET " " CLI_YEL "used (" CLI_BOLD_GRN "%d" CLI_RESET CLI_YEL " KiB free)\r\n" CLI_RESET,
                 ESP.getPsramSize(), (ESP.getPsramSize() - ESP.getFreePsram()), ESP.getPsramSize() / 1024);
 
   Serial.printf(CLI_CYA "->Wall clock:\r\n" CLI_RESET);
